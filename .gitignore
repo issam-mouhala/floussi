@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# environment & secrets
+.env
+.env*.local
+db/turso-vault.json
+
+# local database & backups (données personnelles — ne jamais versionner)
+db/custom.db
+db/custom.db*.bak
+db/backups/
+
+# misc
+*.log
+.DS_Store
