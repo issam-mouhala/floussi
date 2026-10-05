@@ -1,98 +1,84 @@
-# Floussi — AI Money Coach 💰
+# Floussi — Your AI money coach 🇲🇦
 
-Application premium de finances personnelles propulsée par l'IA, conçue pour le Maroc.
-Suivi des dépenses, détection du gaspillage, budgets, objectifs d'épargne et coaching IA —
-en **Darija (RTL) 🇲🇦, Français 🇫🇷 et Anglais 🇬🇧**, en MAD (درهم).
+Application web **fintech personnelle** premium : suivi de dépenses, Floussi IQ (score d'intelligence financière), coach IA trilingue, statistiques annuelles — avec **comptes utilisateurs sécurisés** (connexion / inscription).
 
-![Stack](https://img.shields.io/badge/Next.js_16-React_19-black) ![DB](https://img.shields.io/badge/Prisma-Turso/LibSQL-00C4A7) ![UI](https://img.shields.io/badge/Tailwind_v4-shadcn/ui-38bdf8)
+- **Trilingue natif** : English · Français · الدارجة (RTL première classe)
+- **Multi-comptes** : chaque utilisateur possède ses propres données (auth scrypt + sessions HttpOnly)
+- **Zéro donnée de démo** : un compte neuf démarre vide — vos chiffres sont toujours les vôtres
+- **PWA** installable, dark mode, responsive 360 px → 1920 px
 
 ---
 
-## ✨ Fonctionnalités
+## Fonctionnalités
 
-| Module | Description |
+| Module | Contenu |
 |---|---|
-| 📊 **Dashboard** | Hero « dépensé aujourd'hui », budget journalier, KPI animés (CountUp), répartition nécessaire/évitable, tendance 14 jours |
-| 🧠 **Floussi IQ** | Score d'intelligence financière /100 + conseils contextuels (« safe to spend », projection fin de mois) |
-| 💬 **Coach IA** | Chat financier contextuel (réponses basées sur vos vraies données) |
-| 🔍 **Recherche intelligente** | Langage naturel trilingue : `"tnine 11 decembre"`, `"khobze"`, `"50 dh"`, `"lbareh"` — dates, jours, montants, mots-clés flous (pont arabizi ↔ arabe) + bloc statistique avec somme et commentaire intelligent |
-| 💸 **Transactions** | Filtres (période personnalisée, catégorie, type), vue « Par catégorie », Load more avec progression « X sur Y » |
-| 📈 **Analyse** | Graphiques (aires, donut, radar catégories), stats table triable |
-| 🐷 **Budgets & Objectifs** | Budgets mensuels/catégories, objectifs d'épargne avec progression |
-| 🎮 **Floussi Play** | Mini-jeu arcade « Dirham Drop » (canvas, sons WebAudio synthétisés, records) |
-| 🔔 **Notifications** | Alertes budget, anomalies, tips générés côté serveur |
-| ⚙️ **Réglages** | Thème clair/sombre, langue, export/import JSON, Turso Cloud, mode démo, protection données |
-| 📱 **PWA** | Installable, offline-ready (service worker), safe-areas iOS |
+| **Dashboard** | Total du jour / semaine / mois, roue des dépenses, 14 derniers jours, transactions récentes |
+| **Floussi IQ** | Score propriétaire 0–100 (anneau segmenté), burn rate, projection fin de mois, anomalie par catégorie, conseils |
+| **Statistiques annuelles** | Les 12 mois : total, nombre de transactions, nécessaire vs évitable, catégorie n°1, plus grosse dépense + records toutes périodes |
+| **Transactions** | Recherche floue (arabizi + arabe + français), filtres, date ranges, vue par catégorie, « X sur Y » |
+| **Coach IA** | Réponses ancrées sur vos vrais chiffres (briefing calculé côté serveur), darija arabe/latine auto |
+| **Budgets & objectifs** | Enveloppes par catégorie avec alertes intelligentes, objectifs d'épargne |
+| **Analytics / Journalier** | Séries jour/semaine/mois, calendrier 3 mois, tendances MoM |
+| **Sécurité** | Backups automatiques 2 emplacements, miroir navigateur par compte, auto-restore anti-perte |
 
-## 🎨 Design System v3 — « Obsidian & Emerald »
+## Comptes & authentification
 
-- **Tokens oklch** clair/sombre (dark mode « obsidienne » à 3 niveaux de surfaces)
-- **Space Grotesk** (display : chiffres, titres) + **Geist** (UI) + **Cairo** (arabe/RTL)
-- Cartes premium : ombres multicouches colorées + liseré supérieur interne
-- Animations GPU (framer-motion) : transitions de vue 3D, pilule de nav morphing, tilt cards, orbes flottantes, shine sweep — `prefers-reduced-motion` respecté
-- Bidi-safe : montants en `font-num` tabulaire, RTL miroir complet
+- `/` : landing publique → bouton **Try FLOUSSI** → écran **Connexion / Inscription** (3 langues)
+- **Inscription** : crée le compte + 13 catégories de base clonées + réglages par défaut — **aucune donnée fictive**
+- **Sessions** : cookie `floussi_session` HttpOnly (30 jours), token aléatoire 256 bits, seul son hash SHA-256 est stocké
+- **Mots de passe** : scrypt (sel aléatoire par utilisateur, vérification à temps constant) + limiteur de tentatives
+- **Isolation** : chaque requête API est scopée par `userId` (transactions, catégories, budgets, objectifs, notifications, réglages, export)
+- Le **miroir navigateur** est étiqueté par compte : un appareil partagé ne peut jamais restaurer les données d'un compte dans un autre
 
-## 🚀 Démarrage
+## Démarrage
 
 ```bash
-# 1. Dépendances (bun recommandé, npm/pnpm compatibles)
 bun install
-
-# 2. Variables d'environnement
-cp .env.example .env
-#   → Mode local (aucune config) : SQLite fichier db/custom.db créée automatiquement
-#   → Mode cloud : renseigner DATABASE_URL avec votre URL Turso (libsql://…)
-
-# 3. Schéma Prisma
-bunx prisma db push
-
-# 4. Lancer
-bun run dev        # http://localhost:3000
+cp .env.example .env          # mode local SQLite par défaut
+bun run db:push               # crée le schéma (script safe : snapshot avant/après)
+bun run dev                   # http://localhost:3000
 ```
 
-### Base de données
+Mode cloud (recommandé) : suivre `TURSO-SETUP.md`, puis :
 
-- **Local** : SQLite (`db/custom.db`) — zero-config, démarrage immédiat.
-- **Turso Cloud** : coller `DATABASE_URL=libsql://…` (+ token) — la app détecte et migre
-  automatiquement, avec coffre-fort de secours (`db/turso-vault.json`) et auto-backups JSON
-  horodatés dans `db/backups/` avant chaque opération sensible.
-- **Import/Export** : sauvegarde JSON complète depuis Réglages.
+```bash
+TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… bun scripts/turso-activate.ts
+```
 
-## 🗂️ Structure
+> Comptes : créez le vôtre via **Inscription** (l'application de production refuse toute injection de démo — l'endpoint `/api/seed` est désactivé).
+
+## Déploiement Vercel
+
+L'app se déploie telle quelle sur Vercel — il faut seulement **les deux variables Turso** dans
+*Settings → Environment Variables* (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`), sinon aucune donnée
+ne se charge. Guide complet + dépannage : **`DEPLOY-VERCEL.md`**. Vérification après deploy :
+ouvrez **`/api/health`** → `"storage": "turso"` = connecté.
+
+## Stack & architecture
+
+```
+Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · shadcn/ui · framer-motion
+Prisma + SQLite/Turso (driver adapter libsql) · TanStack Query · Zustand · Recharts · z-ai-web-dev-sdk (coach)
+```
 
 ```
 src/
-├─ app/
-│  ├─ api/            # 24 routes REST (transactions, overview, analytics, chat IA…)
-│  ├─ layout.tsx      # Polices (Geist + Space Grotesk + Cairo), PWA, thème
-│  └─ globals.css     # Design system v3 (tokens oklch, utilitaires premium)
-├─ components/
-│  ├─ app-shell.tsx   # Sidebar/desktop + bottom-nav mobile + transitions 3D
-│  ├─ dashboard.tsx   # Vue principale (hero tilt 3D, KPI, graphiques)
-│  ├─ transactions-view.tsx  # Liste, filtres, recherche intelligente, vue catégories
-│  ├─ game-view.tsx   # Mini-jeu « Dirham Drop » (canvas + WebAudio)
-│  ├─ fx/             # TiltCard, Reveal, CountUp (motion réutilisable)
-│  └─ ui/             # Primitives shadcn/ui personnalisées
-├─ lib/
-│  ├─ i18n/           # Dictionnaires en / fr / ary (darija, RTL)
-│  ├─ smart-search.ts # Parser langage naturel trilingue
-│  ├─ cache.ts        # Cache TTL serveur + déduplication de requêtes
-│  ├─ intelligence.ts # Score Floussi IQ
-│  └─ db.ts           # Client Prisma (Turso/SQLite + fallback coffre)
-└─ hooks/
+  app/            # page unique « / » (gate landing ↔ app) + 25 routes API
+  components/     # vues produit, landing/, ui/, auth-view, stats-view…
+  lib/            # auth (scrypt/sessions), analytics, intelligence, i18n ×3, cache, persistence
+prisma/           # schéma : User, Session, Transaction, Category, Budget, SavingGoal, AppNotification, Settings
 ```
 
-## ⚡ Performance
+## Modèle de données (résumé)
 
-- Cache mémoire TTL côté serveur (overview 2.3 s → ~15 ms) avec invalidation immédiate à chaque écriture
-- React Query : `staleTime` 30 s, vues lourdes en `next/dynamic` + préchauffage idle
-- Rendu GPU uniquement (transforms), animations mesurées, code-splitting par vue
+`User` (1,N) → Transaction · Category · Budget · SavingGoal · AppNotification · Session · Settings (1,1)
+`Category` (1,N) → Transaction · Budget. Unicité `slug`/`categoryId`/`dedupeKey` **par utilisateur**. Suppression en cascade depuis `User`.
 
-## 🔒 Confidentialité
+## Performance & confidentialité
 
-Aucune donnée de démonstration n'est créée automatiquement : l'app démarre vide et
-n'écrit que ce que vous saisissez. Les sauvegardes automatiques sont locales.
+- Cache TTL serveur (lectures agrégées) + clés de cache **par utilisateur**
+- Vues lourdes en `dynamic()` + warm-up idle, skeletons partout, animations `prefers-reduced-motion`-safe
+- Vos données restent dans **votre** base (locale ou Turso) — aucun tiers, aucun chiffre inventé : le coach cite uniquement les faits calculés de votre historique
 
----
-
-Built with Next.js App Router · TypeScript · Tailwind CSS v4 · shadcn/ui · Prisma · Turso · framer-motion · Recharts · WebAudio
+© 2026 Floussi · Made in Morocco 🇲🇦

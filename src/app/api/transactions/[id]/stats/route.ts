@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { bad, ok } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { findSimilar } from '@/lib/similar'
 import { cached } from '@/lib/cache'
 
@@ -16,16 +17,18 @@ function monthWindow(date: Date) {
 /** GET /api/transactions/[id]/stats — statistics about one transaction:
  *  share of its month, share & rank inside its category, comparison with the
  *  average expense, day context and all-time category totals. */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const { id } = await params
   try {
-    const result = await cached(`txstats:${id}`, 20_000, async () => {
-    const tx = await db.transaction.findUnique({ where: { id }, include: { category: true } })
+    const result = await cached(`txstats:${user.id}:${id}`, 20_000, async () => {
+    const tx = await db.transaction.findFirst({ where: { id, userId: user.id }, include: { category: true } })
     if (!tx) return null
 
     const { start, end } = monthWindow(tx.date)
     const monthTxs = await db.transaction.findMany({
-      where: { date: { gte: start, lt: end } },
+      where: { userId: user.id, date: { gte: start, lt: end } },
       select: { id: true, amount: true, categoryId: true, date: true },
     })
 
@@ -47,12 +50,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const isWeekend = dow === 6 || dow === 0
 
     const [similarCount, sameCatAllTime] = await Promise.all([
-      db.transaction.count({ where: { categoryId: tx.categoryId } }),
-      db.transaction.aggregate({ where: { categoryId: tx.categoryId }, _sum: { amount: true } }),
+      db.transaction.count({ where: { userId: user.id, categoryId: tx.categoryId } }),
+      db.transaction.aggregate({ where: { userId: user.id, categoryId: tx.categoryId }, _sum: { amount: true } }),
     ])
 
     // intelligent similar-transaction detection (label/amount/category/cadence)
     const allForSimilar = await db.transaction.findMany({
+      where: { userId: user.id },
       select: { id: true, amount: true, note: true, categoryId: true, date: true },
       orderBy: { date: 'desc' },
     })

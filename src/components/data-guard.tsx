@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApp } from './app-context'
 import { readMirror, refreshMirrorFromServer } from '@/lib/mirror'
+import { useAuthMe } from './api'
 import { toast } from 'sonner'
 
 /**
@@ -29,11 +30,14 @@ import { toast } from 'sonner'
 export function DataGuard() {
   const { t } = useApp()
   const qc = useQueryClient()
+  const { data: auth } = useAuthMe()
+  const userId = auth?.user?.id ?? null
   const busy = React.useRef(false)
   const ready = React.useRef(false) // becomes true once the first guard check has decided
 
   const restoreIfServerEmpty = React.useCallback(async (): Promise<boolean> => {
     if (busy.current) return false
+    if (!userId) return false // signed out — never touch the mirror
     try {
       const res = await fetch('/api/data-state', { cache: 'no-store' })
       if (!res.ok) return false
@@ -42,6 +46,10 @@ export function DataGuard() {
       if (!serverEmpty) return true // decided: server has data
       const mirror = readMirror()
       if (!mirror) return true // decided: nothing to restore
+      // ACCOUNT GUARD: a mirror saved by ANOTHER account on this device must
+      // never be pushed into this account (this exact guard is what makes
+      // registration on a shared device safe).
+      if (mirror.userId && mirror.userId !== userId) return true
       busy.current = true
       const up = await fetch('/api/import', {
         method: 'POST',
@@ -58,18 +66,18 @@ export function DataGuard() {
     } finally {
       busy.current = false
     }
-  }, [qc, t])
+  }, [qc, t, userId])
 
   // guard first on mount; only then unlock mirror refreshes
   React.useEffect(() => {
+    if (!userId) return // signed out — the guard stays parked
     void restoreIfServerEmpty()
       .catch(() => false)
       .then((decided) => {
         ready.current = decided
-        if (decided) void refreshMirrorFromServer()
+        if (decided) void refreshMirrorFromServer(userId)
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [userId])
 
   // mirror: any data cache update → debounced snapshot to localStorage
   React.useEffect(() => {
@@ -87,14 +95,14 @@ export function DataGuard() {
         retry = setTimeout(() => {
           void restoreIfServerEmpty().then((decided) => {
             ready.current = decided
-            if (decided) void refreshMirrorFromServer()
+            if (decided) void refreshMirrorFromServer(userId ?? undefined)
           })
         }, 2500)
         return
       }
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        void refreshMirrorFromServer()
+        void refreshMirrorFromServer(userId ?? undefined)
       }, 1200)
     })
     return () => {
@@ -108,17 +116,19 @@ export function DataGuard() {
   React.useEffect(() => {
     const onVis = () => {
       if (document.visibilityState !== 'visible') return
+      if (!userId) return
       void restoreIfServerEmpty().then((decided) => {
         ready.current = decided
-        if (decided) void refreshMirrorFromServer()
+        if (decided) void refreshMirrorFromServer(userId)
       })
     }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('focus', onVis)
     const iv = setInterval(() => {
+      if (!userId) return
       void restoreIfServerEmpty().then((decided) => {
         ready.current = decided
-        if (decided) void refreshMirrorFromServer()
+        if (decided) void refreshMirrorFromServer(userId)
       })
     }, 90_000)
     return () => {

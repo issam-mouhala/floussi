@@ -1,9 +1,11 @@
 import ZAI from 'z-ai-web-dev-sdk'
 import { bad, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { buildCoachBriefing } from '@/lib/coach-context'
 import type { Lang } from '@/lib/i18n'
 
-export const maxDuration = 120
+// Vercel Hobby allows at most 60s per function — 120 would fail the deploy.
+export const maxDuration = 60
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -74,6 +76,8 @@ STEP 2 — if replying in Arabic-script Darija, follow these rules exactly:
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const body = await readJson<{ messages?: ChatMessage[]; lang?: string }>(req)
   if (!body?.messages || !Array.isArray(body.messages)) return bad('messages required')
 
@@ -92,8 +96,8 @@ export async function POST(req: Request) {
     const arabicLetters = (lastUser.match(/[\u0600-\u06FF]/g) ?? []).length
     const briefingLang: Lang = arabicLetters >= 5 ? 'ary' : lang === 'ary' ? 'en' : lang
     const [settings, briefing] = await Promise.all([
-      import('@/lib/analytics').then((m) => m.getSettings()),
-      buildCoachBriefing(briefingLang),
+      import('@/lib/analytics').then((m) => m.getSettings(user.id)),
+      buildCoachBriefing(briefingLang, user.id),
     ])
 
     const zai = await ZAI.create()

@@ -13,16 +13,16 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 const catName = (lang: Lang, c: { nameEn: string; nameFr: string; nameAr: string; nameAry?: string | null }) =>
   lang === 'fr' ? c.nameFr : lang === 'ary' ? (c.nameAry?.trim() || c.nameAr) : c.nameEn
 
-export async function getSettings() {
-  let s = await db.settings.findUnique({ where: { id: 'default' } })
+export async function getSettings(userId: string) {
+  let s = await db.settings.findUnique({ where: { userId } })
   if (!s) {
-    s = await db.settings.create({ data: { id: 'default' } })
+    s = await db.settings.create({ data: { userId } })
   }
   return s
 }
 
-export async function getCategories(lang: Lang): Promise<CategoryDTO[]> {
-  const cats = await db.category.findMany({ orderBy: { sortOrder: 'asc' } })
+export async function getCategories(lang: Lang, userId: string): Promise<CategoryDTO[]> {
+  const cats = await db.category.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } })
   return cats.map((c) => ({
     id: c.id,
     slug: c.slug,
@@ -88,19 +88,19 @@ export interface RawStats {
   total: number
 }
 
-export async function computeRaw(): Promise<RawStats> {
+export async function computeRaw(userId: string): Promise<RawStats> {
   const now = new Date()
-  const settings = await getSettings()
+  const settings = await getSettings(userId)
   const day0 = startOfDay(now)
   const week0 = startOfWeek(now)
   const month0 = startOfMonth(now)
   const gte = addMonths(month0, -4)
 
   const txs = await db.transaction.findMany({
-    where: { date: { gte } },
+    where: { userId, date: { gte } },
     include: { category: true },
   })
-  const total = await db.transaction.count()
+  const total = await db.transaction.count({ where: { userId } })
 
   const today = { total: 0, variable: 0, necessary: 0, unnecessary: 0, count: 0 }
   const week = { total: 0, unnecessary: 0 }
@@ -224,22 +224,23 @@ export async function computeRaw(): Promise<RawStats> {
 
 // ---------------------------------------------------------------- overview (dashboard)
 
-export async function getOverview(lang: Lang): Promise<OverviewDTO> {
-  const raw = await computeRaw()
+export async function getOverview(lang: Lang, userId: string): Promise<OverviewDTO> {
+  const raw = await computeRaw(userId)
   const now = raw.now
   const day0 = startOfDay(now)
   const month0 = startOfMonth(now)
   const { settings } = raw
 
-  const cats = await db.category.findMany()
+  const cats = await db.category.findMany({ where: { userId } })
   const catById = new Map(cats.map((c) => [c.id, c]))
 
   const txs = await db.transaction.findMany({
-    where: { date: { gte: addDays(day0, -13) } },
+    where: { userId, date: { gte: addDays(day0, -13) } },
     orderBy: { date: 'desc' },
     include: { category: true },
   })
   const recentRows = await db.transaction.findMany({
+    where: { userId },
     orderBy: { date: 'desc' },
     take: 6,
     include: { category: true },
@@ -345,23 +346,23 @@ export async function getOverview(lang: Lang): Promise<OverviewDTO> {
     },
     last14,
     recent: recentRows.map((t) => txDTO(t, lang)),
-    unreadCount: await db.appNotification.count({ where: { read: false } }),
+    unreadCount: await db.appNotification.count({ where: { userId, read: false } }),
   }
 }
 
 // ---------------------------------------------------------------- analytics
 
-export async function getAnalytics(lang: Lang, days = 30): Promise<AnalyticsDTO> {
+export async function getAnalytics(lang: Lang, userId: string, days = 30): Promise<AnalyticsDTO> {
   const now = new Date()
   const day0 = startOfDay(now)
   const week0 = startOfWeek(now)
   const month0 = startOfMonth(now)
   const gte = addMonths(month0, -6)
   const txs = await db.transaction.findMany({
-    where: { date: { gte } },
+    where: { userId, date: { gte } },
     include: { category: true },
   })
-  const cats = await db.category.findMany()
+  const cats = await db.category.findMany({ where: { userId } })
   const catBySlug = new Map(cats.map((c) => [c.slug, c]))
   const loc = intlLocale(lang)
 
@@ -606,7 +607,7 @@ function monthVariable(txs: Array<{ isRecurring: boolean; amount: number; date: 
  * (zero-filled), each day with its total / count / necessary split / top
  * categories, plus range summary KPIs.
  */
-export async function getDailyStats(lang: Lang): Promise<DailyStatsDTO> {
+export async function getDailyStats(lang: Lang, userId: string): Promise<DailyStatsDTO> {
   const now = new Date()
   const day0 = startOfDay(now)
   const month0 = startOfMonth(now)
@@ -614,11 +615,11 @@ export async function getDailyStats(lang: Lang): Promise<DailyStatsDTO> {
   const end = addMonths(month0, 1) // exclusive upper bound (covers whole current month)
 
   const txs = await db.transaction.findMany({
-    where: { date: { gte: start, lt: end } },
+    where: { userId, date: { gte: start, lt: end } },
     include: { category: true },
     orderBy: { date: 'asc' },
   })
-  const { dailyBudget } = await getSettings()
+  const { dailyBudget } = await getSettings(userId)
   const loc = intlLocale(lang)
 
   // aggregate per Casablanca day

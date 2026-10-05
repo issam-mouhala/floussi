@@ -1,8 +1,9 @@
 'use client'
 
 import * as React from 'react'
-import { useSettings } from './api'
+import { useAuthMe, useSettings } from './api'
 import { LANGS, tr, type Key, type Lang } from '@/lib/i18n'
+import { GUEST_LANG_EVENT, getGuestLang } from '@/lib/guest-lang'
 
 interface AppContextValue {
   lang: Lang
@@ -29,8 +30,22 @@ const AppContext = React.createContext<AppContextValue>({
 })
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const { data: settings } = useSettings()
-  const lang: Lang = settings?.language ?? 'en'
+  // settings are per-account: only fetch them once a session exists.
+  // Signed-out visitors keep their language in localStorage (guest lang).
+  const { data: auth } = useAuthMe()
+  const signedIn = !!auth?.user
+  const { data: settings } = useSettings({ enabled: signedIn })
+  const [guestLang, setGuestLangState] = React.useState<Lang | null>(null)
+  React.useEffect(() => {
+    setGuestLangState(getGuestLang())
+    const onGuest = (e: Event) => {
+      const l = (e as CustomEvent<Lang>).detail
+      if (l === 'en' || l === 'fr' || l === 'ary') setGuestLangState(l)
+    }
+    window.addEventListener(GUEST_LANG_EVENT, onGuest)
+    return () => window.removeEventListener(GUEST_LANG_EVENT, onGuest)
+  }, [])
+  const lang: Lang = (signedIn && settings?.language) || guestLang || 'en'
   const dir = React.useMemo(() => LANGS.find((l) => l.code === lang)?.dir ?? 'ltr', [lang])
 
   React.useEffect(() => {

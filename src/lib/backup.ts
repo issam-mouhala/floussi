@@ -20,6 +20,7 @@ export interface BackupFile {
     nameEn: string
     nameFr: string
     nameAr: string
+    nameAry?: string | null
     icon: string
     color: string
     essential: boolean
@@ -45,14 +46,19 @@ export interface BackupFile {
   }>
 }
 
-/** Build a full JSON snapshot of the database. */
-export async function buildBackup(): Promise<BackupFile> {
+/**
+ * Build a full JSON snapshot.
+ *  - with userId   → that user's data (settings + scoped rows) — /api/export
+ *  - without       → the whole database — auto-backup engine & pre-push safety
+ */
+export async function buildBackup(userId?: string): Promise<BackupFile> {
+  const scope = userId ? { userId } : {}
   const [settings, categories, transactions, budgets, goals] = await Promise.all([
-    db.settings.findUnique({ where: { id: 'default' } }),
-    db.category.findMany({ orderBy: { sortOrder: 'asc' } }),
-    db.transaction.findMany({ include: { category: true }, orderBy: { date: 'asc' } }),
-    db.budget.findMany({ include: { category: true } }),
-    db.savingGoal.findMany({ orderBy: { createdAt: 'asc' } }),
+    userId ? db.settings.findUnique({ where: { userId } }) : db.settings.findFirst({ orderBy: { updatedAt: 'asc' } }),
+    db.category.findMany({ where: scope, orderBy: { sortOrder: 'asc' } }),
+    db.transaction.findMany({ where: scope, include: { category: true }, orderBy: { date: 'asc' } }),
+    db.budget.findMany({ where: scope, include: { category: true } }),
+    db.savingGoal.findMany({ where: scope, orderBy: { createdAt: 'asc' } }),
   ])
 
   return {
@@ -76,6 +82,7 @@ export async function buildBackup(): Promise<BackupFile> {
       nameEn: c.nameEn,
       nameFr: c.nameFr,
       nameAr: c.nameAr,
+      nameAry: c.nameAry,
       icon: c.icon,
       color: c.color,
       essential: c.essential,
@@ -110,10 +117,31 @@ export interface RestoreResult {
   skippedCategories: number
 }
 
-/** Restore a Floussi JSON backup. Replaces transactions, budgets and goals;
- *  upserts categories by slug (keeps unknown ones); merges settings.
- *  Returns null if the object is not a valid backup. */
-export async function restoreBackupFile(data: unknown): Promise<RestoreResult | null> {
+/**
+ * The id of the account that owns this installation — the first user created.
+ * Used by server-side self-healing paths that have no session (auto-restore
+ * after a wipe, pre-push snapshot restore).
+ */
+export async function getOwnerUserId(): Promise<string | null> {
+  const u = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
+  return u?.id ?? null
+}
+
+/**
+ * Restore a Floussi JSON backup into ONE user's space.
+ *
+ * SAFETY NOTE (learned the hard way): this used to wrap delete+create in an
+ * interactive $transaction — but on the libsql/Turso driver adapter the
+ * rollback is NOT reliable, so a mid-restore failure left the tables EMPTY.
+ * The restore now VALIDATES AND PREPARES EVERYTHING FIRST (all rows mapped to
+ * real category ids, userId attached), and only then replaces the data
+ * without a fake safety net: a failure can at worst leave a partial restore
+ * that the next auto-restore completes — never an empty database.
+ */
+export async function restoreBackupFile(
+  data: unknown,
+  opts: { ownerId: string },
+): Promise<RestoreResult | null> {
   const body = data as {
     app?: string
     transactions?: Array<{
@@ -132,111 +160,124 @@ export async function restoreBackupFile(data: unknown): Promise<RestoreResult | 
     settings?: Partial<NonNullable<BackupFile['settings']>>
   }
   if (!body || !Array.isArray(body.transactions)) return null
+  const ownerId = opts.ownerId
 
-  const cats = await db.category.findMany()
-  const bySlug = new Map(cats.map((c) => [c.slug, c.id]))
+  // ---- 1. ensure categories exist for this user, build the slug map --------
   let skippedCategories = 0
-
-  const result = await db.$transaction(async (tx) => {
-    // restore categories first (covers a wiped/renamed Category table after schema change)
-    for (const c of body.categories ?? []) {
-      if (!c?.slug) continue
-      try {
-        await tx.category.upsert({
-          where: { slug: c.slug },
-          update: {
-            ...(c.nameEn ? { nameEn: String(c.nameEn) } : {}),
-            ...(c.nameFr ? { nameFr: String(c.nameFr) } : {}),
-            ...(c.nameAr ? { nameAr: String(c.nameAr) } : {}),
-            ...(c.icon ? { icon: String(c.icon) } : {}),
-            ...(c.color ? { color: String(c.color) } : {}),
-            ...(typeof c.essential === 'boolean' ? { essential: c.essential } : {}),
-            ...(Number.isFinite(c.sortOrder) ? { sortOrder: c.sortOrder } : {}),
-          },
-          create: {
+  for (const c of body.categories ?? []) {
+    if (!c?.slug) continue
+    try {
+      const existing = await db.category.findUnique({
+        where: { userId_slug: { userId: ownerId, slug: String(c.slug) } },
+      })
+      const patch = {
+        ...(c.nameEn ? { nameEn: String(c.nameEn) } : {}),
+        ...(c.nameFr ? { nameFr: String(c.nameFr) } : {}),
+        ...(c.nameAr ? { nameAr: String(c.nameAr) } : {}),
+        ...(c.nameAry !== undefined ? { nameAry: c.nameAry ?? null } : {}),
+        ...(c.icon ? { icon: String(c.icon) } : {}),
+        ...(c.color ? { color: String(c.color) } : {}),
+        ...(typeof c.essential === 'boolean' ? { essential: c.essential } : {}),
+        ...(Number.isFinite(c.sortOrder) ? { sortOrder: c.sortOrder } : {}),
+      }
+      if (existing) {
+        await db.category.update({ where: { id: existing.id }, data: patch })
+      } else {
+        await db.category.create({
+          data: {
+            userId: ownerId,
             slug: String(c.slug),
             nameEn: String(c.nameEn ?? c.slug),
             nameFr: String(c.nameFr ?? c.nameEn ?? c.slug),
             nameAr: String(c.nameAr ?? c.nameEn ?? c.slug),
+            nameAry: c.nameAry ?? null,
             icon: String(c.icon ?? 'Wallet'),
             color: String(c.color ?? '#10b981'),
             essential: !!c.essential,
             sortOrder: Number.isFinite(c.sortOrder) ? c.sortOrder : 999,
           },
         })
-      } catch {
-        skippedCategories++
       }
+    } catch {
+      skippedCategories++
     }
+  }
 
-    // refresh slug map after category upserts
-    const allCats = await tx.category.findMany()
-    const slugMap = new Map(allCats.map((c) => [c.slug, c.id]))
+  const allCats = await db.category.findMany({ where: { userId: ownerId } })
+  const slugMap = new Map(allCats.map((c) => [c.slug, c.id]))
 
-    // replace user data
-    await tx.appNotification.deleteMany()
-    await tx.transaction.deleteMany()
-    await tx.budget.deleteMany()
-    await tx.savingGoal.deleteMany()
+  // ---- 2. prepare every row BEFORE touching existing data -------------------
+  const invalid = body.transactions.filter((t) => !slugMap.has(t.categorySlug)).length
+  const txRows = body.transactions
+    .filter((t) => slugMap.has(t.categorySlug) && Number.isFinite(t.amount) && Number.isFinite(Date.parse(t.date)))
+    .map((t) => ({
+      userId: ownerId,
+      amount: t.amount,
+      note: t.note ?? null,
+      categoryId: slugMap.get(t.categorySlug)!,
+      date: new Date(t.date),
+      necessary: t.necessary ?? null,
+      icon: typeof t.icon === 'string' && t.icon.trim() ? t.icon.trim().slice(0, 40) : null,
+      isRecurring: t.isRecurring ?? false,
+      paymentMethod: t.paymentMethod ?? 'cash',
+    }))
+  const budgetRows = (body.budgets ?? [])
+    .filter((b) => slugMap.has(b.categorySlug) && Number.isFinite(b.amount) && b.amount > 0)
+    .map((b) => ({ userId: ownerId, categoryId: slugMap.get(b.categorySlug)!, amount: b.amount, period: b.period ?? 'monthly' }))
+  const goalRows = (body.goals ?? [])
+    .filter((g) => g.title && Number.isFinite(g.targetAmount) && g.targetAmount > 0)
+    .map((g) => ({
+      userId: ownerId,
+      title: g.title.slice(0, 80),
+      emoji: g.emoji ?? '🎯',
+      targetAmount: g.targetAmount,
+      currentAmount: Math.max(0, g.currentAmount ?? 0),
+      deadline: g.deadline ? new Date(g.deadline) : null,
+    }))
 
-    const invalid = body.transactions!.filter((t) => !slugMap.has(t.categorySlug)).length
-    const txRows = body.transactions!
-      .filter((t) => slugMap.has(t.categorySlug) && Number.isFinite(t.amount) && Number.isFinite(Date.parse(t.date)))
-      .map((t) => ({
-        amount: t.amount,
-        note: t.note ?? null,
-        categoryId: slugMap.get(t.categorySlug)!,
-        date: new Date(t.date),
-        necessary: t.necessary ?? null,
-        icon: typeof t.icon === 'string' && t.icon.trim() ? t.icon.trim().slice(0, 40) : null,
-        isRecurring: t.isRecurring ?? false,
-        paymentMethod: t.paymentMethod ?? 'cash',
-      }))
-    for (let i = 0; i < txRows.length; i += 200) {
-      await tx.transaction.createMany({ data: txRows.slice(i, i + 200) })
+  // ---- 3. replace the user's data (validated rows only) ----------------------
+  await db.appNotification.deleteMany({ where: { userId: ownerId } })
+  await db.transaction.deleteMany({ where: { userId: ownerId } })
+  await db.budget.deleteMany({ where: { userId: ownerId } })
+  await db.savingGoal.deleteMany({ where: { userId: ownerId } })
+
+  for (let i = 0; i < txRows.length; i += 200) {
+    await db.transaction.createMany({ data: txRows.slice(i, i + 200) })
+  }
+  if (budgetRows.length) {
+    // one budget per (user, category) — skip duplicates from hand-edited files
+    const seen = new Set<string>()
+    for (const b of budgetRows) {
+      const key = b.categoryId
+      if (seen.has(key)) continue
+      seen.add(key)
+      await db.budget.create({ data: b })
     }
+  }
+  if (goalRows.length) await db.savingGoal.createMany({ data: goalRows })
 
-    for (const b of body.budgets ?? []) {
-      const categoryId = slugMap.get(b.categorySlug)
-      if (categoryId && Number.isFinite(b.amount) && b.amount > 0) {
-        await tx.budget.create({ data: { categoryId, amount: b.amount, period: b.period ?? 'monthly' } })
-      }
-    }
+  // ---- 4. merge settings ------------------------------------------------------
+  if (body.settings) {
+    const s = body.settings
+    const current = await db.settings.findUnique({ where: { userId: ownerId } })
+    if (!current) await db.settings.create({ data: { userId: ownerId } })
+    await db.settings.update({
+      where: { userId: ownerId },
+      data: {
+        ...(s.displayName ? { displayName: String(s.displayName).slice(0, 40) } : {}),
+        ...(s.language === 'en' || s.language === 'fr' || s.language === 'ary' ? { language: s.language } : {}),
+        ...(Number.isFinite(s.monthlyBudget) && s.monthlyBudget! > 0 ? { monthlyBudget: s.monthlyBudget! } : {}),
+        ...(Number.isFinite(s.dailyBudget) && s.dailyBudget! > 0 ? { dailyBudget: s.dailyBudget! } : {}),
+        ...(Number.isFinite(s.weekendBudget) && s.weekendBudget! > 0 ? { weekendBudget: s.weekendBudget! } : {}),
+        ...(Number.isFinite(s.savingsTarget) && s.savingsTarget! > 0 ? { savingsTarget: s.savingsTarget! } : {}),
+      },
+    })
+  }
 
-    for (const g of body.goals ?? []) {
-      if (g.title && Number.isFinite(g.targetAmount) && g.targetAmount > 0) {
-        await tx.savingGoal.create({
-          data: {
-            title: g.title.slice(0, 80),
-            emoji: g.emoji ?? '🎯',
-            targetAmount: g.targetAmount,
-            currentAmount: Math.max(0, g.currentAmount ?? 0),
-            deadline: g.deadline ? new Date(g.deadline) : null,
-          },
-        })
-      }
-    }
-
-    if (body.settings) {
-      const s = body.settings
-      await tx.settings.upsert({
-        where: { id: 'default' },
-        update: {
-          ...(s.displayName ? { displayName: String(s.displayName).slice(0, 40) } : {}),
-          ...(s.language === 'en' || s.language === 'fr' || s.language === 'ary' ? { language: s.language } : {}),
-          ...(Number.isFinite(s.monthlyBudget) && s.monthlyBudget! > 0 ? { monthlyBudget: s.monthlyBudget! } : {}),
-          ...(Number.isFinite(s.dailyBudget) && s.dailyBudget! > 0 ? { dailyBudget: s.dailyBudget! } : {}),
-          ...(Number.isFinite(s.weekendBudget) && s.weekendBudget! > 0 ? { weekendBudget: s.weekendBudget! } : {}),
-          ...(Number.isFinite(s.savingsTarget) && s.savingsTarget! > 0 ? { savingsTarget: s.savingsTarget! } : {}),
-        },
-        create: { id: 'default' },
-      })
-    }
-
-    return { transactions: txRows.length, budgets: 0, goals: 0, invalid }
-  })
-
-  // counts computed outside the closure for accuracy
-  const [budgetCount, goalCount] = await Promise.all([db.budget.count(), db.savingGoal.count()])
-  return { ...result, budgets: budgetCount, goals: goalCount, skippedCategories }
+  const [budgetCount, goalCount] = await Promise.all([
+    db.budget.count({ where: { userId: ownerId } }),
+    db.savingGoal.count({ where: { userId: ownerId } }),
+  ])
+  return { transactions: txRows.length, budgets: budgetCount, goals: goalCount, invalid, skippedCategories }
 }
+

@@ -20,10 +20,14 @@ interface MirrorShape {
   transactions?: unknown[]
   budgets?: unknown[]
   goals?: unknown[]
+  /** id of the account this snapshot belongs to — a mirror must NEVER be
+   *  restored into a different account (multi-user safety, Task 21). */
+  userId?: string
 }
 
 /** Save the canonical backup JSON to this device. Empty data CLEARS the mirror
- *  so an intentional wipe is never resurrected. */
+ *  so an intentional wipe is never resurrected — but only the CURRENT user's
+ *  empty export (a foreign mirror on a shared device is left untouched). */
 export function writeMirror(backupJson: MirrorShape): void {
   if (!hasLS()) return
   try {
@@ -34,7 +38,10 @@ export function writeMirror(backupJson: MirrorShape): void {
     if (count > 0) {
       window.localStorage.setItem(MIRROR_KEY, JSON.stringify(backupJson))
     } else {
-      window.localStorage.removeItem(MIRROR_KEY)
+      const cur = readMirror()
+      if (!cur || cur.userId === backupJson.userId) {
+        window.localStorage.removeItem(MIRROR_KEY)
+      }
     }
   } catch {
     /* quota or privacy mode — mirror is best-effort */
@@ -70,13 +77,15 @@ export function clearMirror(): void {
   }
 }
 
-/** Fetch the current server backup and store it on this device. */
-export async function refreshMirrorFromServer(): Promise<void> {
+/** Fetch the current server backup and store it on this device.
+ *  userId stamps the snapshot owner; when the server export is empty but the
+ *  device holds ANOTHER user's mirror, that mirror is preserved. */
+export async function refreshMirrorFromServer(userId?: string): Promise<void> {
   try {
     const res = await fetch('/api/export', { cache: 'no-store' })
     if (!res.ok) return
     const j = (await res.json()) as MirrorShape
-    writeMirror(j)
+    writeMirror({ ...j, userId })
   } catch {
     /* offline — keep whatever mirror exists */
   }

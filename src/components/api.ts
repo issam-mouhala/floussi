@@ -22,11 +22,12 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
 
 // ---------------- settings ----------------
 
-export function useSettings() {
+export function useSettings(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['settings'],
     queryFn: () => j<SettingsDTO>('/api/settings'),
     staleTime: 60_000,
+    enabled: opts?.enabled ?? true,
   })
 }
 
@@ -557,6 +558,101 @@ export function useTxStats(id: string | null) {
     queryKey: ['tx-stats', id],
     queryFn: () => j<TxStatsDTO>(`/api/transactions/${id}/stats`),
     enabled: !!id,
+    staleTime: 60_000,
+  })
+}
+
+// ---------------- auth (Task 21) ----------------
+
+export interface AuthUserDTO {
+  id: string
+  email: string
+  name: string
+}
+
+/** Session state — always 200, so it never pollutes the console. */
+export function useAuthMe() {
+  return useQuery({
+    queryKey: ['auth'],
+    queryFn: () => j<{ user: AuthUserDTO | null }>('/api/auth/me'),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+}
+
+function useInvalidateOnAuthChange() {
+  const qc = useQueryClient()
+  return () => {
+    // a different account may have different settings/data — full refresh
+    qc.removeQueries({ queryKey: ['settings'] })
+    qc.invalidateQueries()
+  }
+}
+
+export function useLogin() {
+  const bust = useInvalidateOnAuthChange()
+  return useMutation({
+    mutationFn: (p: { email: string; password: string }) =>
+      j<{ user: AuthUserDTO }>('/api/auth/login', jsonInit('POST', p)),
+    onSuccess: () => bust(),
+  })
+}
+
+export function useRegister() {
+  const bust = useInvalidateOnAuthChange()
+  return useMutation({
+    mutationFn: (p: { name: string; email: string; password: string }) =>
+      j<{ user: AuthUserDTO }>('/api/auth/register', jsonInit('POST', p)),
+    onSuccess: () => bust(),
+  })
+}
+
+export function useLogout() {
+  const bust = useInvalidateOnAuthChange()
+  return useMutation({
+    mutationFn: () => j<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+    onSuccess: () => bust(),
+  })
+}
+
+// ---------------- yearly statistics (Task 21) ----------------
+
+export interface MonthStatDTO {
+  key: string // 'YYYY-MM'
+  label: string
+  total: number
+  count: number
+  necessary: number
+  unnecessary: number
+  topCategory: { name: string; icon: string; color: string } | null
+  biggest: { amount: number; note: string | null } | null
+}
+
+export interface YearStatsDTO {
+  year: number
+  years: number[]
+  months: MonthStatDTO[]
+  totals: {
+    total: number
+    count: number
+    necessary: number
+    unnecessary: number
+    avgMonth: number
+    activeMonths: number
+  }
+  allTime: {
+    txCount: number
+    avgTx: number
+    biggest: { amount: number; note: string | null; date: string } | null
+    busiestMonth: { label: string; count: number } | null
+  }
+}
+
+export function useYearStats(lang: Lang, year?: number) {
+  return useQuery({
+    queryKey: ['stats', lang, year ?? ''],
+    queryFn: () => j<YearStatsDTO>(`/api/stats?lang=${lang}${year ? `&year=${year}` : ''}`),
     staleTime: 60_000,
   })
 }

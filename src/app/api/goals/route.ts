@@ -1,10 +1,15 @@
 import { db } from '@/lib/db'
 import { autoBackupIfHasData } from '@/lib/persistence'
 import { bad, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { bustCache, cached } from '@/lib/cache'
 
-export async function GET() {
-  const goals = await cached('goals', 30_000, async () => db.savingGoal.findMany({ orderBy: { createdAt: 'asc' } }))
+export async function GET(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
+  const goals = await cached(`goals:${user.id}`, 30_000, async () =>
+    db.savingGoal.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } }),
+  )
   return ok(
     goals.map((g) => ({
       id: g.id,
@@ -28,12 +33,15 @@ interface GoalInput {
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const body = await readJson<GoalInput>(req)
   if (!body?.title?.trim() || typeof body.targetAmount !== 'number' || !(body.targetAmount > 0)) {
     return bad('title and positive targetAmount required')
   }
   const created = await db.savingGoal.create({
     data: {
+      userId: user.id,
       title: body.title.trim(),
       emoji: body.emoji || '🎯',
       targetAmount: body.targetAmount,

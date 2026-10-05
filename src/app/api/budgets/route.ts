@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { autoBackupIfHasData } from '@/lib/persistence'
 import { bad, langFromRequest, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { computeRaw, getSettings } from '@/lib/analytics'
 import { startOfMonth } from '@/lib/dates'
 import { tr } from '@/lib/i18n'
@@ -8,21 +9,23 @@ import { formatMAD } from '@/lib/money'
 import { bustCache, cached } from '@/lib/cache'
 
 export async function GET(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const lang = langFromRequest(req)
-  const data = await cached(`budgets:${lang}`, 30_000, async () => {
+  const data = await cached(`budgets:${user.id}:${lang}`, 30_000, async () => {
   const [budgets, cats, settings] = await Promise.all([
-    db.budget.findMany({ include: { category: true } }),
-    db.category.findMany({ orderBy: { sortOrder: 'asc' } }),
-    getSettings(),
+    db.budget.findMany({ where: { userId: user.id }, include: { category: true } }),
+    db.category.findMany({ where: { userId: user.id }, orderBy: { sortOrder: 'asc' } }),
+    getSettings(user.id),
   ])
 
-  const raw = await computeRaw()
+  const raw = await computeRaw(user.id)
   const month0 = startOfMonth(raw.now)
 
   const rows = await Promise.all(
     budgets.map(async (b) => {
       const spentAgg = await db.transaction.aggregate({
-        where: { categoryId: b.categoryId ?? undefined, date: { gte: month0 } },
+        where: { userId: user.id, categoryId: b.categoryId ?? undefined, date: { gte: month0 } },
         _sum: { amount: true },
       })
       const spent = spentAgg._sum?.amount ?? 0
@@ -48,7 +51,7 @@ export async function GET(req: Request) {
     .filter((c) => !withBudget.has(c.id))
     .map((c) => ({ id: c.id, name: lang === 'fr' ? c.nameFr : lang === 'ary' ? c.nameAr : c.nameEn, icon: c.icon, color: c.color }))
 
-  const monthSpentAgg = await db.transaction.aggregate({ where: { date: { gte: month0 } }, _sum: { amount: true } })
+  const monthSpentAgg = await db.transaction.aggregate({ where: { userId: user.id, date: { gte: month0 } }, _sum: { amount: true } })
   const monthSpent = monthSpentAgg._sum.amount ?? 0
 
   return {
@@ -72,11 +75,19 @@ interface BudgetInput {
 }
 
 export async function POST(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const body = await readJson<BudgetInput>(req)
   if (!body?.categoryId || typeof body.amount !== 'number' || !(body.amount > 0)) {
     return bad('categoryId and positive amount required')
   }
-  const existing = await db.budget.findUnique({ where: { categoryId: body.categoryId } })
+  // the category must belong to the user
+  const cat = await db.category.findFirst({ where: { id: body.categoryId, userId: user.id }, select: { id: true } })
+  if (!cat) return bad('Category not found', 404)
+
+  const existing = await db.budget.findUnique({
+    where: { userId_categoryId: { userId: user.id, categoryId: body.categoryId } },
+  })
   if (existing) {
     await db.budget.update({ where: { id: existing.id }, data: { amount: body.amount } })
     void autoBackupIfHasData().catch(() => {})
@@ -84,7 +95,7 @@ export async function POST(req: Request) {
     return ok({ id: existing.id, updated: true })
   }
   const created = await db.budget.create({
-    data: { categoryId: body.categoryId, amount: body.amount },
+    data: { userId: user.id, categoryId: body.categoryId, amount: body.amount },
   })
   void autoBackupIfHasData().catch(() => {})
   bustCache()

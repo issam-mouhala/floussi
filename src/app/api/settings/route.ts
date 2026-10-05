@@ -1,12 +1,15 @@
 import { db } from '@/lib/db'
 import { autoBackupIfHasData } from '@/lib/persistence'
 import { bad, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { getSettings } from '@/lib/analytics'
 import { bustCache, cached } from '@/lib/cache'
 import type { Lang } from '@/lib/i18n'
 
-export async function GET() {
-  const s = await cached('settings', 10_000, () => getSettings())
+export async function GET(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
+  const s = await cached(`settings:${user.id}`, 10_000, () => getSettings(user.id))
   return ok({
     displayName: s.displayName,
     language: s.language as Lang,
@@ -30,6 +33,8 @@ interface SettingsInput {
 }
 
 export async function PATCH(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const body = await readJson<SettingsInput>(req)
   if (!body) return bad('Invalid body')
 
@@ -42,8 +47,8 @@ export async function PATCH(req: Request) {
     if (typeof v === 'number' && v >= 0 && Number.isFinite(v)) data[k] = Math.round(v * 100) / 100
   }
 
-  await getSettings() // ensure row exists
-  await db.settings.update({ where: { id: 'default' }, data })
+  await getSettings(user.id) // ensure the row exists
+  await db.settings.update({ where: { userId: user.id }, data })
   void autoBackupIfHasData().catch(() => {})
   bustCache()
   return ok({ ok: true })

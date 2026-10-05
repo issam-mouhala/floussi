@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { QueryErrorState } from './feedback'
 import { CatIcon } from './cat-icon'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -110,7 +111,7 @@ export function TransactionsView() {
     weekday: sm.weekday,
     amount: sm.amount,
   }
-  const { data, isLoading, isFetching } = useTransactions(filters, lang)
+  const { data, isLoading, isFetching, isError, refetch } = useTransactions(filters, lang)
 
   const fmtDay = new Intl.DateTimeFormat(intlLocale(lang), { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -379,7 +380,9 @@ export function TransactionsView() {
       )}
 
       {/* list */}
-      {isLoading ? (
+      {isError ? (
+        <QueryErrorState title={t('err.title')} desc={t('err.descTx')} retry={t('err.retry')} onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-16 rounded-2xl" />

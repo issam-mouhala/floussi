@@ -22,11 +22,11 @@ interface PendingRule {
  * Behavioral rules → deduped notifications. Each rule fires at most once per
  * day / week / month (encoded in dedupeKey), so the user is never spammed.
  */
-export async function generateNotifications(force = false): Promise<void> {
+export async function generateNotifications(userId: string, force = false): Promise<void> {
   if (!force && Date.now() - lastRun < THROTTLE_MS) return
   lastRun = Date.now()
 
-  const raw = await computeRaw()
+  const raw = await computeRaw(userId)
   const week0 = startOfWeek(raw.now)
   const dk = dayKey(raw.now)
   const wk = dayKey(week0)
@@ -66,7 +66,7 @@ export async function generateNotifications(force = false): Promise<void> {
   // 3) Category spike this week (> 50% above the 4-week baseline, meaningful amount)
   for (const [slug, { week, avg }] of raw.catWeekVsAvg) {
     if (avg >= 60 && week > avg * 1.5 && week - avg >= 80) {
-      const cat = await db.category.findUnique({ where: { slug } })
+      const cat = await db.category.findFirst({ where: { userId, slug } })
       if (!cat) continue
       pending.push({
         type: 'category_spike', level: 'warning', key: 'n.catSpike',
@@ -124,8 +124,9 @@ export async function generateNotifications(force = false): Promise<void> {
   for (const p of pending) {
     try {
       await db.appNotification.upsert({
-        where: { dedupeKey: p.dedupeKey },
+        where: { userId_dedupeKey: { userId, dedupeKey: p.dedupeKey } },
         create: {
+          userId,
           type: p.type,
           level: p.level,
           key: p.key,
@@ -141,8 +142,8 @@ export async function generateNotifications(force = false): Promise<void> {
   }
 }
 
-export async function listNotifications(lang: Lang): Promise<NotifDTO[]> {
-  const rows = await db.appNotification.findMany({ orderBy: { createdAt: 'desc' }, take: 40 })
+export async function listNotifications(lang: Lang, userId: string): Promise<NotifDTO[]> {
+  const rows = await db.appNotification.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 40 })
   return rows.map((r) => {
     let payload: Record<string, string | number> = {}
     try {

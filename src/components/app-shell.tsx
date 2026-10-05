@@ -7,12 +7,17 @@ import { useTheme } from 'next-themes'
 import {
   LayoutDashboard, ArrowLeftRight, ChartPie, MessageCircleHeart, PiggyBank, Target,
   Shapes, Bell, Settings, Plus, Sun, Moon, Languages, Wallet, CalendarDays, Sparkles, Gamepad2,
+  ChartColumn, LogOut,
 } from 'lucide-react'
 import { useAppStore, type View } from '@/lib/store'
 import { useApp } from './app-context'
-import { useNotifications } from './api'
+import { useAuthMe, useLogout, useNotifications } from './api'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { springSnappy, viewVariants } from '@/lib/motion'
 import { DashboardView } from './dashboard'
@@ -21,6 +26,7 @@ import { DailyView } from './daily-view'
 /* Heavy views load on demand (smaller first paint) and are warmed up during
  * idle time below — so a click never waits on the network. */
 const AnalyticsView = dynamic(() => import('./analytics-view').then((m) => m.AnalyticsView))
+const StatsView = dynamic(() => import('./stats-view').then((m) => m.StatsView))
 const CoachView = dynamic(() => import('./coach-view').then((m) => m.CoachView))
 const IntelView = dynamic(() => import('./intel-view').then((m) => m.IntelView))
 const TransactionsView = dynamic(() => import('./transactions-view').then((m) => m.TransactionsView))
@@ -37,6 +43,7 @@ import { useSettings, useUpdateSettings } from './api'
 const NAV: { view: View; icon: React.ElementType; key: Parameters<ReturnType<typeof useApp>['t']>[0] }[] = [
   { view: 'dashboard', icon: LayoutDashboard, key: 'nav.dashboard' },
   { view: 'analytics', icon: ChartPie, key: 'nav.analytics' },
+  { view: 'stats', icon: ChartColumn, key: 'nav.stats' },
   { view: 'daily', icon: CalendarDays, key: 'nav.daily' },
   { view: 'coach', icon: MessageCircleHeart, key: 'nav.coach' },
   { view: 'intel', icon: Sparkles, key: 'nav.intel' },
@@ -328,6 +335,7 @@ const VIEW_COMPONENTS: Record<View, React.ComponentType> = {
   intel: IntelView,
   transactions: TransactionsView,
   analytics: AnalyticsView,
+  stats: StatsView,
   daily: DailyView,
   coach: CoachView,
   budgets: BudgetsView,
@@ -336,6 +344,51 @@ const VIEW_COMPONENTS: Record<View, React.ComponentType> = {
   notifications: NotificationsView,
   settings: SettingsView,
   game: GameView,
+}
+
+function UserMenu() {
+  const { t } = useApp()
+  const { data: auth } = useAuthMe()
+  const logout = useLogout()
+  const user = auth?.user
+  if (!user) return null
+  const initials = (user.name || user.email).slice(0, 2).toUpperCase()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-xl size-9"
+          aria-label={t('auth.signedInAs', { email: user.email })}
+        >
+          <span className="size-7 rounded-lg hero-gradient text-white text-[10px] font-bold flex items-center justify-center font-display">
+            {initials}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56 rounded-xl">
+        <DropdownMenuLabel className="font-normal">
+          <div className="text-[13px] font-semibold text-foreground">{user.name}</div>
+          <div className="text-xs text-muted-foreground truncate" dir="ltr">{user.email}</div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => {
+            logout.mutate()
+            try {
+              sessionStorage.removeItem('floussi-entered')
+            } catch {}
+            useAppStore.setState({ entered: false, showAuth: true, view: 'dashboard' })
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <LogOut className="size-4" />
+          {t('auth.logout')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function TopBar() {
@@ -366,6 +419,7 @@ function TopBar() {
             <ThemeToggle />
           </div>
           <BellButton />
+          <UserMenu />
         </div>
       </div>
     </header>

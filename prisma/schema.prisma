@@ -7,9 +7,44 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Auth (Task 21) ─────────────────────────────────────────────────────────
+//
+// Floussi is multi-user since the auth upgrade: every piece of user-owned
+// data carries a required `userId` FK. Categories are per-user too (the 13
+// base categories are cloned at signup, and the smart-darija engine only
+// ever creates categories inside the current user's space).
+// Sessions: opaque random token in an HttpOnly cookie, SHA-256 hash stored
+// server-side, 30-day sliding expiry.
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  createdAt     DateTime  @default(now())
+  sessions      Session[]
+  transactions  Transaction[]
+  categories    Category[]
+  budgets       Budget[]
+  goals         SavingGoal[]
+  notifications AppNotification[]
+  settings      Settings?
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Category {
   id           String   @id @default(cuid())
-  slug         String   @unique
+  slug         String
   nameEn       String
   nameFr       String
   nameAr       String
@@ -22,6 +57,11 @@ model Category {
   sortOrder    Int      @default(0)
   transactions Transaction[]
   budgets      Budget[]
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId])
 }
 
 model Transaction {
@@ -38,18 +78,26 @@ model Transaction {
   isRecurring   Boolean   @default(false)
   paymentMethod String    @default("cash")
   createdAt     DateTime  @default(now())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([categoryId])
+  @@index([userId, date])
 }
 
 model Budget {
   id         String    @id @default(cuid())
-  categoryId String?   @unique
+  categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   amount     Float
   period     String    @default("monthly")
   createdAt  DateTime  @default(now())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, categoryId])
+  @@index([userId])
 }
 
 model SavingGoal {
@@ -60,6 +108,10 @@ model SavingGoal {
   currentAmount Float     @default(0)
   deadline      DateTime?
   createdAt     DateTime  @default(now())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AppNotification {
@@ -68,13 +120,18 @@ model AppNotification {
   level     String   @default("info") // info | success | warning | danger
   key       String // i18n template key
   payload   String   @default("{}") // JSON params for the template
-  dedupeKey String   @unique
+  dedupeKey String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId])
 }
 
 model Settings {
-  id            String   @id @default("default")
+  id            String   @id @default(cuid())
   displayName   String   @default("Yassine")
   language      String   @default("en") // en | fr | ary
   currency      String   @default("MAD")
@@ -84,4 +141,6 @@ model Settings {
   weekendBudget Float    @default(350)
   savingsTarget Float    @default(600)
   updatedAt     DateTime @updatedAt
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

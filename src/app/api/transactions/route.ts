@@ -1,10 +1,13 @@
 import { db } from '@/lib/db'
 import { bad, langFromRequest, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { getCategories } from '@/lib/analytics'
 import { autoBackupIfHasData } from '@/lib/persistence'
 import { bustCache, cached } from '@/lib/cache'
 
 export async function GET(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const lang = langFromRequest(req)
   const url = new URL(req.url)
   const q = url.searchParams.get('q')?.trim() ?? ''
@@ -20,10 +23,10 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 500)
   const offset = Math.max(Number(url.searchParams.get('offset') ?? '0'), 0)
   // cache key = full filter signature (from/to ISO instants make it unique per range)
-  const ck = `tx:${lang}|${q}|${cat}|${essential}|${recurring}|${days}|${from}|${to}|${weekday}|${amount}|${sort}|${limit}|${offset}`
+  const ck = `tx:${user.id}:${lang}|${q}|${cat}|${essential}|${recurring}|${days}|${from}|${to}|${weekday}|${amount}|${sort}|${limit}|${offset}`
 
   const payload = await cached(ck, 15_000, async () => {
-    const where: Record<string, unknown> = {}
+    const where: Record<string, unknown> = { userId: user.id }
     if (from || to) {
       const df: Record<string, unknown> = {}
       const f = from ? new Date(from) : null
@@ -116,7 +119,7 @@ export async function GET(req: Request) {
 
     const total = rows.length
     const page = rows.slice(offset, offset + limit)
-    const cats = await getCategories(lang)
+    const cats = await getCategories(lang, user.id)
 
     // aggregate over the WHOLE filtered set → smart-search summary card
     const sum = rows.reduce((s, t) => s + t.amount, 0)
@@ -211,15 +214,18 @@ const cleanIcon = (v: unknown) =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, 40) : null
 
 export async function POST(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const body = await readJson<TxInput>(req)
   if (!body || typeof body.amount !== 'number' || !(body.amount > 0)) return bad('Invalid amount')
   if (!body.categoryId) return bad('Category required')
 
-  const cat = await db.category.findUnique({ where: { id: body.categoryId } })
+  const cat = await db.category.findFirst({ where: { id: body.categoryId, userId: user.id } })
   if (!cat) return bad('Category not found', 404)
 
   const created = await db.transaction.create({
     data: {
+      userId: user.id,
       amount: Math.round(body.amount * 100) / 100,
       note: body.note?.trim() || null,
       categoryId: body.categoryId,

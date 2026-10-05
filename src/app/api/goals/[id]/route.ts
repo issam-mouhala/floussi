@@ -1,14 +1,17 @@
 import { db } from '@/lib/db'
 import { autoBackupIfHasData } from '@/lib/persistence'
 import { bad, ok, readJson } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { bustCache } from '@/lib/cache'
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const { id } = await params
   const body = await readJson<{ addAmount?: number; title?: string; targetAmount?: number; deadline?: string | null }>(req)
   if (!body) return bad('Invalid body')
 
-  const goal = await db.savingGoal.findUnique({ where: { id } })
+  const goal = await db.savingGoal.findFirst({ where: { id, userId: user.id } })
   if (!goal) return bad('Goal not found', 404)
 
   const data: Record<string, unknown> = {}
@@ -25,13 +28,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return ok({ ok: true })
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   const { id } = await params
-  try {
-    await db.savingGoal.delete({ where: { id } })
-  } catch {
-    return bad('Goal not found', 404)
-  }
+  const r = await db.savingGoal.deleteMany({ where: { id, userId: user.id } })
+  if (r.count === 0) return bad('Goal not found', 404)
   void autoBackupIfHasData().catch(() => {})
   bustCache()
   return ok({ ok: true })

@@ -40,20 +40,20 @@ export interface CoachBriefing {
  * Darija (Arabic script, currency درهم) — the model mirrors that vocabulary
  * instead of inventing garbled MSA/Arabizi mixes.
  */
-export async function buildCoachBriefing(lang: Lang): Promise<CoachBriefing> {
+export async function buildCoachBriefing(lang: Lang, userId: string): Promise<CoachBriefing> {
   const now = new Date()
   const day0 = startOfDay(now)
   const week0 = startOfWeek(now)
   const month0 = startOfMonth(now)
   const prevMonth0 = addMonths(month0, -1)
-  const settings = await getSettings()
+  const settings = await getSettings(userId)
 
   const [cats, goals, budgets, txs] = await Promise.all([
-    db.category.findMany({ orderBy: { sortOrder: 'asc' } }),
-    db.savingGoal.findMany({ orderBy: { createdAt: 'asc' } }),
-    db.budget.findMany({ include: { category: true } }),
+    db.category.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } }),
+    db.savingGoal.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }),
+    db.budget.findMany({ where: { userId }, include: { category: true } }),
     db.transaction.findMany({
-      where: { date: { gte: prevMonth0 } },
+      where: { userId, date: { gte: prevMonth0 } },
       include: { category: true },
       orderBy: { date: 'desc' },
     }),

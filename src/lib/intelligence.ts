@@ -44,8 +44,8 @@ export interface IntelligenceDTO {
   tips: IntelligenceTip[]
 }
 
-export async function getIntelligence(lang: Lang): Promise<IntelligenceDTO> {
-  const s = await db.settings.findUnique({ where: { id: 'default' } })
+export async function getIntelligence(lang: Lang, userId: string): Promise<IntelligenceDTO> {
+  const s = await db.settings.findUnique({ where: { userId } })
   const monthlyBudget = s?.monthlyBudget ?? 0
   const dailyBudget = s?.dailyBudget ?? 0
   const savingsTarget = s?.savingsTarget ?? 0
@@ -60,7 +60,7 @@ export async function getIntelligence(lang: Lang): Promise<IntelligenceDTO> {
 
   const windowStart = addDays(today, -29) // 30 days of behaviour
   const txs = await db.transaction.findMany({
-    where: { date: { gte: windowStart } },
+    where: { userId, date: { gte: windowStart } },
     select: {
       amount: true, note: true, date: true, necessary: true,
       category: { select: { id: true, nameEn: true, nameFr: true, nameAr: true, nameAry: true, icon: true, color: true, essential: true } },

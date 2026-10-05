@@ -1,10 +1,13 @@
 import { buildBackup } from '@/lib/backup'
 import { bad } from '@/lib/api-helpers'
+import { requireUser } from '@/lib/auth'
 import { cached } from '@/lib/cache'
 
-/** GET /api/export            → full JSON backup (settings, categories, transactions, budgets, goals)
- *  GET /api/export?format=csv → transactions CSV */
+/** GET /api/export            → the session user's JSON backup (settings, categories, transactions, budgets, goals)
+ *  GET /api/export?format=csv → their transactions CSV */
 export async function GET(req: Request) {
+  const user = await requireUser(req)
+  if (!user) return bad('Unauthorized', 401)
   try {
     const url = new URL(req.url)
     const format = url.searchParams.get('format')
@@ -12,6 +15,7 @@ export async function GET(req: Request) {
     if (format === 'csv') {
       const { db } = await import('@/lib/db')
       const txs = await db.transaction.findMany({
+        where: { userId: user.id },
         include: { category: true },
         orderBy: { date: 'desc' },
       })
@@ -45,7 +49,7 @@ export async function GET(req: Request) {
 
     // JSON backup is fetched repeatedly by the DataGuard mirror (focus/interval)
     // → short TTL keeps every snapshot fresh within 10s while killing the cost
-    const backup = await cached('export:json', 10_000, () => buildBackup())
+    const backup = await cached(`export:json:${user.id}`, 10_000, () => buildBackup(user.id))
     return new Response(JSON.stringify(backup, null, 2), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',

@@ -61,8 +61,8 @@ export interface IntelDTO {
   week: { date: string; total: number; weekend: boolean }[]
 }
 
-export async function getIntel(lang: Lang): Promise<IntelDTO> {
-  const health = await getIntelligence(lang)
+export async function getIntel(lang: Lang, userId: string): Promise<IntelDTO> {
+  const health = await getIntelligence(lang, userId)
 
   const now = new Date()
   const today = startOfDay(now)
@@ -71,13 +71,13 @@ export async function getIntel(lang: Lang): Promise<IntelDTO> {
   const since90 = addDays(today, -89)
 
   const txs = await db.transaction.findMany({
-    where: { date: { gte: since90 } },
+    where: { userId, date: { gte: since90 } },
     select: {
       amount: true, note: true, date: true, necessary: true,
       category: { select: { id: true, nameEn: true, nameFr: true, nameAr: true, nameAry: true, icon: true, color: true, essential: true } },
     },
   })
-  const txCount = await db.transaction.count()
+  const txCount = await db.transaction.count({ where: { userId } })
 
   const catNameOf = (c: { nameEn: string; nameFr: string; nameAr: string; nameAry?: string | null }) =>
     lang === 'fr' ? c.nameFr : lang === 'ary' ? (c.nameAry?.trim() || c.nameAr) : c.nameEn

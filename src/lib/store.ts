@@ -7,6 +7,7 @@ export type View =
   | 'intel'
   | 'transactions'
   | 'analytics'
+  | 'stats'
   | 'daily'
   | 'coach'
   | 'budgets'
@@ -38,6 +39,12 @@ interface AppState {
   setEditing: (tx: EditingTx | null) => void
   moreOpen: boolean
   setMoreOpen: (v: boolean) => void
+  /** landing gate — false until the visitor enters the product */
+  entered: boolean
+  enterApp: () => void
+  /** auth screen (login / signup) shown over the landing — Task 21 */
+  showAuth: boolean
+  setShowAuth: (v: boolean) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -50,4 +57,13 @@ export const useAppStore = create<AppState>((set) => ({
   setEditing: (tx) => set({ editing: tx, addOpen: tx !== null }),
   moreOpen: false,
   setMoreOpen: (v) => set({ moreOpen: v }),
+  entered: false,
+  enterApp: () => {
+    try {
+      sessionStorage.setItem('floussi-entered', '1')
+    } catch {}
+    set({ entered: true, showAuth: false })
+  },
+  showAuth: false,
+  setShowAuth: (v) => set({ showAuth: v }),
 }))

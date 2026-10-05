@@ -18,9 +18,9 @@ import { DailyTrendArea, NecessaryDonut } from './charts'
 import { SpendingWheel } from './spending-wheel'
 import { IntelligenceCard } from './intelligence-card'
 import { CatIcon } from './cat-icon'
-import { TiltCard } from './fx/tilt-card'
 import { CountUp } from './fx/count-up'
 import { Reveal } from './fx/reveal'
+import { QueryErrorState } from './feedback'
 import { cn } from '@/lib/utils'
 import type { Key } from '@/lib/i18n'
 
@@ -63,10 +63,14 @@ const MemoKpiCard = React.memo(KpiCard)
 
 export function DashboardView() {
   const { t, lang } = useApp()
-  const { data, isLoading } = useOverview(lang)
+  const { data, isLoading, isError, refetch } = useOverview(lang)
   const { data: notifData } = useNotifications(lang)
   const setView = useAppStore((s) => s.setView)
   const o = data?.overview
+
+  if (isError) {
+    return <QueryErrorState title={t('err.title')} desc={t('err.desc')} retry={t('err.retry')} onRetry={() => refetch()} className="mt-6" />
+  }
 
   if (isLoading || !o) {
     return (
@@ -94,19 +98,15 @@ export function DashboardView() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Hero — today (3D tilt + floating orbs + shine) */}
-      <TiltCard max={4} className="!rounded-3xl">
-        <motion.section
+      {/* Hero — today (clean 2D product surface) */}
+      <motion.section
           initial={{ opacity: 0, scale: 0.985 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
           className="hero-gradient shine rounded-3xl p-5 sm:p-7 text-white card-shadow relative overflow-hidden"
         >
-          {/* decorative layers — floating orbs for depth */}
+          {/* decorative texture — subtle, static */}
           <div className="absolute inset-0 hero-dots [mask-image:radial-gradient(70%_90%_at_85%_15%,black,transparent)] pointer-events-none" aria-hidden />
-          <div className="absolute -top-24 -end-20 size-64 rounded-full bg-white/10 blur-3xl pointer-events-none animate-float" aria-hidden />
-          <div className="absolute -bottom-28 -start-16 size-56 rounded-full bg-emerald-300/15 blur-3xl pointer-events-none animate-float-slower" aria-hidden />
-          <div className="absolute top-8 end-24 size-16 rounded-2xl bg-white/8 border border-white/15 backdrop-blur-sm rotate-12 pointer-events-none animate-float hidden sm:block" aria-hidden />
           <div className="relative">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -160,7 +160,6 @@ export function DashboardView() {
         </div>
         </div>
         </motion.section>
-      </TiltCard>
 
       {/* Floussi IQ — flagship intelligence */}
       <IntelligenceCard />

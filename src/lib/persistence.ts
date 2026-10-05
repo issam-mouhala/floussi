@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { db } from './db'
-import { buildBackup, restoreBackupFile, type BackupFile } from './backup'
+import { buildBackup, getOwnerUserId, restoreBackupFile, type BackupFile } from './backup'
 
 /**
  * Auto-protection engine: guarantees user data survives app updates, restarts
@@ -380,6 +380,10 @@ async function readBackupByName(name: string): Promise<string | null> {
 export async function autoRestoreIfEmpty(): Promise<{ restored: boolean; transactions: number }> {
   try {
     if (!(await isUserDataTableEmpty())) return { restored: false, transactions: -1 }
+    // everything belongs to the installation owner (first user) when restored
+    // server-side; session-driven restores go through /api/import instead
+    const ownerId = await getOwnerUserId()
+    if (!ownerId) return { restored: false, transactions: 0 }
     for (const name of await listBackupCandidates()) {
       const raw = await readBackupByName(name)
       if (!raw) continue
@@ -400,7 +404,7 @@ export async function autoRestoreIfEmpty(): Promise<{ restored: boolean; transac
         )
         continue
       }
-      const r = await restoreBackupFile(snap)
+      const r = await restoreBackupFile(snap, { ownerId })
       if (r) {
         console.log(
           `[persistence] AUTO-RESTORED ${r.transactions} transactions, ${r.budgets} budgets, ${r.goals} goals from ${name}`,

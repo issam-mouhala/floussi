@@ -8,7 +8,7 @@ import { useIntelligence } from './api'
 import { formatMAD } from '@/lib/money'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CatIcon } from './cat-icon'
-import { TiltCard } from './fx/tilt-card'
+import { SegmentedScoreRing } from './fx/score-ring'
 import { cn } from '@/lib/utils'
 import type { Key } from '@/lib/i18n'
 
@@ -24,55 +24,6 @@ const toneStyle = {
   bad: 'text-rose-200 bg-rose-400/10 border-rose-300/25',
   info: 'text-sky-200 bg-sky-400/10 border-sky-300/25',
 } as const
-
-function useCountUp(value: number, dur = 900) {
-  const [display, setDisplay] = React.useState(0)
-  React.useEffect(() => {
-    const start = performance.now()
-    let raf = 0
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / dur)
-      setDisplay(Math.round(value * (1 - Math.pow(1 - p, 3))))
-      if (p < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [value, dur])
-  return display
-}
-
-function ScoreRing({ score }: { score: number }) {
-  const shown = useCountUp(score)
-  const R = 54
-  const C = 2 * Math.PI * R
-  const dash = (shown / 100) * C
-  return (
-    <div className="relative size-[132px] shrink-0">
-      <svg viewBox="0 0 132 132" className="size-full -rotate-90">
-        <defs>
-          <linearGradient id="iqGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#5eead4" />
-            <stop offset="50%" stopColor="#818cf8" />
-            <stop offset="100%" stopColor="#f0abfc" />
-          </linearGradient>
-        </defs>
-        <circle cx="66" cy="66" r={R} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="10" />
-        <motion.circle
-          cx="66" cy="66" r={R} fill="none"
-          stroke="url(#iqGrad)" strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={C}
-          initial={{ strokeDashoffset: C }}
-          animate={{ strokeDashoffset: C - dash }}
-          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-4xl font-extrabold text-white font-num leading-none">{shown}</span>
-        <span className="text-[10px] text-white/55 mt-1 font-num">/ 100</span>
-      </div>
-    </div>
-  )
-}
 
 function Chip({ icon: Icon, children, className }: { icon: React.ElementType; children: React.ReactNode; className?: string }) {
   return (
@@ -110,12 +61,11 @@ export function IntelligenceCard() {
   const pacePct = Math.min(100, data.usedPct)
 
   return (
-    <TiltCard max={3.5} className="!rounded-3xl">
     <motion.section
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
-      className="relative overflow-hidden rounded-3xl p-5 sm:p-6 text-white card-shadow shine bg-[linear-gradient(135deg,#1e1b4b_0%,#312e81_30%,#4c1d95_65%,#701a75_100%)]"
+      className="relative overflow-hidden rounded-3xl p-5 sm:p-6 text-white card-shadow bg-[linear-gradient(135deg,#1e1b4b_0%,#312e81_30%,#4c1d95_65%,#701a75_100%)]"
     >
       {/* aurora decoration */}
       <div className="absolute -top-20 -end-16 size-56 rounded-full bg-fuchsia-400/20 blur-3xl pointer-events-none" aria-hidden />
@@ -141,7 +91,9 @@ export function IntelligenceCard() {
 
         {/* main row */}
         <div className="mt-4 flex flex-col sm:flex-row items-center gap-5">
-          <ScoreRing score={data.score} />
+          <div className="text-white">
+            <SegmentedScoreRing score={data.score} size={150} />
+          </div>
 
           <div className="flex-1 w-full min-w-0 space-y-3">
             {/* safe to spend */}
@@ -232,6 +184,5 @@ export function IntelligenceCard() {
         )}
       </div>
     </motion.section>
-    </TiltCard>
   )
 }
