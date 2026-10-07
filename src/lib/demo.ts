@@ -1,20 +1,30 @@
-import { db } from '@/lib/db'
+import type { PrismaClient } from '@prisma/client'
+import { mainDb } from '@/lib/db'
 import { randomBytes } from 'node:crypto'
 import { hashPassword } from '@/lib/auth'
 import { CATEGORIES } from '@/lib/seed'
 import { DEMO_EMAIL } from '@/lib/types'
 
 /**
- * Floussi demo account (Task 23) — one-click, shared, self-resetting.
+ * Floussi demo account (Task 23; storage moved out of the cloud DB in Task 26).
  *
  * A dedicated user (demo@floussi.app) owns a realistic, clearly fake dataset.
  * Anyone can enter it without credentials; every demo login wipes and re-seeds
  * it, so each visitor explores the FULL product (IQ, analytics, budgets, coach)
  * on fresh data while the demo space stays isolated from every real account.
  *
+ * Storage (Task 26): ALL demo data lives in the EPHEMERAL demo database
+ * (src/lib/demo-db.ts — a per-instance local file, /tmp/floussi-demo.db on
+ * Vercel). NOTHING demo-related is written to Turso — the cloud DB only ever
+ * stores real accounts. purgeLegacyDemoUser() removes the demo account that
+ * used to live in the main DB before Task 26, freeing that storage.
+ *
  * Data safety:
- *  - Everything below is scoped to the demo user id — real accounts are never
- *    touched (the owner's 152 transactions are off-limits by construction).
+ *  - Every function takes an explicit PrismaClient: the demo dataset functions
+ *    are always called with the demo client, purgeLegacyDemoUser always with
+ *    the main client — there is no ambient-sensitive path here.
+ *  - Real accounts are never touched (the owner's transactions are off-limits
+ *    by construction; the purge targets ONLY the reserved demo email).
  *  - The RNG is deterministic (fixed seed) so resets always rebuild the same
  *    dataset — screenshots and demos stay reproducible.
  *  - The demo password is a random hash nobody knows: the account is only
@@ -22,6 +32,9 @@ import { DEMO_EMAIL } from '@/lib/types'
  */
 
 const DEMO_NAME = 'Démo'
+/** Fixed id so sessions, caches and browser mirrors stay stable across
+ *  rebuilds of the ephemeral demo DB (cuid() would change on every recreate). */
+export const DEMO_USER_ID = 'demo'
 
 const DEMO_SETTINGS = {
   displayName: DEMO_NAME,
@@ -36,14 +49,15 @@ const DEMO_SETTINGS = {
 
 // --------------------------------------------------------------- demo account
 
-/** Find (or create) the demo user, repairing its categories/settings if a
- *  previous tester deleted or mutated them. */
-export async function ensureDemoUser(): Promise<{ id: string }> {
-  let user = await db.user.findUnique({ where: { email: DEMO_EMAIL }, select: { id: true } })
-  if (!user) {
+/** Find (or create) the demo user in the EPHEMERAL demo DB, repairing its
+ *  categories/settings if a previous tester deleted or mutated them. */
+export async function ensureDemoUser(client: PrismaClient): Promise<string> {
+  const existing = await client.user.findUnique({ where: { id: DEMO_USER_ID }, select: { id: true } })
+  if (!existing) {
     try {
-      user = await db.user.create({
+      await client.user.create({
         data: {
+          id: DEMO_USER_ID,
           name: DEMO_NAME,
           email: DEMO_EMAIL,
           // unusable password — the demo is entered exclusively via /api/auth/demo
@@ -54,32 +68,71 @@ export async function ensureDemoUser(): Promise<{ id: string }> {
         select: { id: true },
       })
     } catch {
-      // lost a create race against a concurrent demo login — re-read
-      user = await db.user.findUnique({ where: { email: DEMO_EMAIL }, select: { id: true } })
+      // lost a create race against a concurrent demo login — verify it exists
+      const raced = await client.user.findUnique({ where: { id: DEMO_USER_ID }, select: { id: true } })
+      if (!raced) throw new Error('demo-user-unavailable')
     }
   }
-  if (!user) throw new Error('demo-user-unavailable')
-  const userId = user.id
+  const userId = DEMO_USER_ID
 
-  const cats = await db.category.findMany({ where: { userId }, select: { slug: true } })
+  const cats = await client.category.findMany({ where: { userId }, select: { slug: true } })
   const have = new Set(cats.map((c) => c.slug))
   const missing = CATEGORIES.filter((c) => !have.has(c.slug))
-  if (missing.length) await db.category.createMany({ data: missing.map((c) => ({ ...c, userId })) })
+  if (missing.length)
+    await client.category.createMany({ data: missing.map((c) => ({ ...c, userId })) })
 
-  const settings = await db.settings.findUnique({ where: { userId }, select: { id: true } })
-  if (!settings) await db.settings.create({ data: { ...DEMO_SETTINGS, userId } })
+  const settings = await client.settings.findUnique({ where: { userId }, select: { id: true } })
+  if (!settings) await client.settings.create({ data: { ...DEMO_SETTINGS, userId } })
 
-  return { id: userId }
+  return userId
 }
 
 /** Wipe the demo user's activity (transactions, budgets, goals, notifications)
  *  and restore factory demo settings. Categories are preserved. */
-export async function resetDemoData(userId: string): Promise<void> {
-  await db.appNotification.deleteMany({ where: { userId } })
-  await db.transaction.deleteMany({ where: { userId } })
-  await db.budget.deleteMany({ where: { userId } })
-  await db.savingGoal.deleteMany({ where: { userId } })
-  await db.settings.update({ where: { userId }, data: { ...DEMO_SETTINGS } })
+export async function resetDemoData(client: PrismaClient, userId: string): Promise<void> {
+  await client.appNotification.deleteMany({ where: { userId } })
+  await client.transaction.deleteMany({ where: { userId } })
+  await client.budget.deleteMany({ where: { userId } })
+  await client.savingGoal.deleteMany({ where: { userId } })
+  await client.settings.update({ where: { userId }, data: { ...DEMO_SETTINGS } })
+}
+
+// ------------------------------------------------------------ legacy migration
+
+let legacyPurgeDone: boolean | undefined
+
+/** One-time migration (Task 26): the demo account USED to live in the main
+ *  cloud DB — find-or-create + wipe + re-seed on every login permanently kept
+ *  ~232 fake transactions in Turso. Remove it entirely so the cloud DB stores
+ *  real accounts ONLY. Targets the reserved demo email exclusively (a real
+ *  account cannot own it: registration rejects it with 409).
+ *  Never throws — a transient main-DB failure must not block the demo. */
+export async function purgeLegacyDemoUser(): Promise<{ purged: boolean; error?: string }> {
+  if (legacyPurgeDone) return { purged: false }
+  try {
+    const legacy = await mainDb.user.findUnique({ where: { email: DEMO_EMAIL }, select: { id: true } })
+    if (legacy) {
+      // children first — explicit deletes, independent of FK-cascade pragmas
+      await mainDb.session.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.appNotification.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.transaction.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.budget.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.savingGoal.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.category.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.settings.deleteMany({ where: { userId: legacy.id } })
+      await mainDb.user.delete({ where: { id: legacy.id } }).catch(() => {
+        // P2025 = a concurrent purge already removed it — success either way
+      })
+      console.warn(
+        `[demo] legacy demo account removed from the main DB (Task 26) — cloud storage now holds real accounts only`,
+      )
+    }
+    legacyPurgeDone = true
+    return { purged: true }
+  } catch (e) {
+    // not marking done → retried on the next demo login
+    return { purged: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 // ------------------------------------------------------------- demo dataset
@@ -199,8 +252,8 @@ function buildDemoTransactions(): DemoTx[] {
 
 /** Rebuild the demo user's full dataset: transactions, budgets, goals.
  *  Returns the number of transactions seeded. */
-export async function seedDemoData(userId: string): Promise<{ transactions: number }> {
-  const cats = await db.category.findMany({ where: { userId }, select: { id: true, slug: true } })
+export async function seedDemoData(client: PrismaClient, userId: string): Promise<{ transactions: number }> {
+  const cats = await client.category.findMany({ where: { userId }, select: { id: true, slug: true } })
   const catId = new Map(cats.map((c) => [c.slug, c.id]))
   const cat = (slug: string): string => {
     const id = catId.get(slug)
@@ -209,7 +262,7 @@ export async function seedDemoData(userId: string): Promise<{ transactions: numb
   }
 
   const txs = buildDemoTransactions()
-  await db.transaction.createMany({
+  await client.transaction.createMany({
     data: txs.map((t) => ({
       amount: t.amount,
       note: t.note,
@@ -221,11 +274,11 @@ export async function seedDemoData(userId: string): Promise<{ transactions: numb
     })),
   })
 
-  await db.budget.createMany({
+  await client.budget.createMany({
     data: DEMO_BUDGETS.map((b) => ({ categoryId: cat(b.slug), amount: b.amount, userId })),
   })
 
-  await db.savingGoal.createMany({
+  await client.savingGoal.createMany({
     data: DEMO_GOALS.map((g) => ({
       title: g.title,
       emoji: g.emoji,

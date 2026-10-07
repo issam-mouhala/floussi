@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaLibSQL } from '@prisma/adapter-libsql'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -22,7 +23,8 @@ import path from 'node:path'
  */
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+  prisma: PrismaClient | undefined // routable proxy (exported as `db`)
+  main?: PrismaClient // raw main client (exported as `mainDb`)
   __floussiDbMode?: 'turso' | 'local'
   __floussiCredsSource?: CredsSource
 }
@@ -129,7 +131,64 @@ function createDb(): PrismaClient {
   return new PrismaClient()
 }
 
-export const db = globalForPrisma.prisma ?? createDb()
+// ------------------------------------------------------------------ routing
+//
+// Task 26 — request-routable `db`. Real users always hit the main client
+// (Turso cloud / local SQLite). Demo sessions instead resolve against the
+// EPHEMERAL demo database (src/lib/demo-db.ts, a /tmp file — never Turso).
+//
+// auth.ts installs the demo client for the whole request via
+// AsyncLocalStorage.enterWith (synchronously, before the handler's first
+// await — that is what makes it propagate). From that point every
+// `db.…` access in ANY route or lib of this request resolves to the demo
+// client — no per-route plumbing, and future code is safe by default.
+// Outside a request (scripts, instrumentation boot) there is no ambient
+// client, so `db` simply is the main client — previous behaviour.
+
+const ambientDb = new AsyncLocalStorage<PrismaClient>()
+
+/** Make `client` THE database for the remainder of the current request.
+ *  Must be called synchronously (before any await) in the request path. */
+export function setAmbientDb(client: PrismaClient): void {
+  ambientDb.enterWith(client)
+}
+
+/** The client an ambient context points at, or the main client. */
+function resolveActual(target: PrismaClient): PrismaClient {
+  return ambientDb.getStore() ?? target
+}
+
+function makeRoutable(main: PrismaClient): PrismaClient {
+  return new Proxy(main, {
+    get(target, prop) {
+      const actual = resolveActual(target)
+      // receiver = actual: keeps Prisma internals working when accessed
+      // through the proxy (private fields, symbol props, delegates).
+      const value = Reflect.get(actual, prop, actual)
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(actual)
+        : value
+    },
+    has(target, prop) {
+      return Reflect.has(resolveActual(target), prop)
+    },
+    set(target, prop, value) {
+      return Reflect.set(resolveActual(target), prop, value, resolveActual(target))
+    },
+  })
+}
+
+const mainRaw = globalForPrisma.main ?? createDb()
+if (process.env.NODE_ENV !== 'production') globalForPrisma.main = mainRaw
+
+/** The raw main client — for code that must ALWAYS target the real accounts
+ *  DB regardless of any demo ambient (purges, boot jobs, auth lookups). */
+export const mainDb = mainRaw
+
+/** Request-routable client: ambient (demo) or main. Default export. */
+export const db = globalForPrisma.prisma ?? makeRoutable(mainRaw)
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 
 export function dbMode(): 'turso' | 'local' {
   return globalForPrisma.__floussiDbMode ?? 'local'
@@ -139,5 +198,3 @@ export function dbMode(): 'turso' | 'local' {
 export function dbInfo(): { mode: 'turso' | 'local'; source: CredsSource; vercel: boolean } {
   return { mode: dbMode(), source: lastCredsSource, vercel: !!process.env.VERCEL }
 }
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db

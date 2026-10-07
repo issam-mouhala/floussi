@@ -38,6 +38,7 @@ Application web **fintech personnelle** premium : suivi de dépenses, Floussi IQ
 - Compte partagé `demo@floussi.app` : ~230 transactions fictives réalistes (~70 jours, Maroc, MAD), budgets, objectifs, IQ — **l'UI n'affiche jamais ces données comme réelles** (badge « Démo » dans le menu utilisateur)
 - **Reset à chaque entrée** : les données démo sont effacées et reconstruites (RNG déterministe) — chaque visiteur repart d'un compte propre, et les visiteurs peuvent ajouter/modifier librement sans rien casser
 - **Isolation totale** : tout est scopé au `userId` du compte démo ; les comptes réels sont intouchables ; l'email `demo@floussi.app` est réservé (non registrable)
+- **Zéro stockage cloud pour le démo** : le jeu de données démo vit dans une base SQLite éphémère locale (`/tmp/floussi-demo.db`, recréée automatiquement par chaque instance) — la base Turso ne contient QUE les comptes réels ; vérifiable via `/api/health` → `"demo": {"mode": "ephemeral-local-file"}`
 - Langue par défaut du démo : français — chaque testeur peut passer en EN / الدارجة depuis les réglages
 
 ## Démarrage

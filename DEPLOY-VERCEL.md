@@ -78,19 +78,29 @@ dans l'app locale. Les données que vous voyiez en local sont les mêmes (une se
 
 ## Le bouton « Essayer le compte démo »
 
-Le compte démo (1 clic, sans inscription) vit dans la **même base Turso** : il se crée tout
-seul au premier clic et se remplit d'un jeu de données d'exemple (~230 transactions) à chaque
-connexion. S'il ne marche pas sur votre déploiement :
+Le compte démo (1 clic, sans inscription) **n'utilise PAS Turso** : depuis la Task 26,
+tout son jeu de données (~230 transactions fictives) vit dans une **base SQLite éphémère
+locale** (`/tmp/floussi-demo.db`), recréée automatiquement par chaque instance du serveur.
+Résultat :
+
+- **Zéro stockage cloud consommé par le démo** — Turso ne contient que les comptes réels ;
+- le bouton démo **fonctionne même si Turso est mal configuré** (il n'en dépend plus) ;
+- le seed local est plus rapide qu'avant (~1 s au lieu de 2–3 s via le réseau) ;
+- chaque connexion démo réinitialise les données, et les modifications faites pendant
+  une session démo sont **volatiles par conception** (recyclées avec l'instance serverless).
+
+En cas de problème :
 
 | Symptôme | Cause | Fix |
 |---|---|---|
-| Le bouton affiche « App non connectée à sa base de données » | Env vars Turso absentes sur Vercel | Étape 2 → ajouter les 2 variables → Redeploy → `/api/health` doit dire `storage: "turso"` |
-| « La démo démarre — réessayez » | Cold start serverless + seed en cours (rare) | Réessayer quelques secondes plus tard — le 2ᵉ clic passe |
+| « La démo démarre — réessayez » | Cold start serverless : la base éphémère se construit (rare, ~1 s) | Réessayer quelques secondes plus tard — le 2ᵉ clic passe |
 | « Trop de tentatives » | Rate-limit anti-abus (10 clics / 15 min / IP) | Attendre quelques minutes |
-| Rien ne se passe, erreur réseau dans la console | Fonction coupée par le timeout | Corrigé : la route démo demande explicitement `maxDuration = 60` — redéployez la dernière version du code |
+| Le démo charge puis redemande connexion | L'instance serverless a été recyclée entre-temps (données démo volatiles par design) | Recliquer le bouton démo — comportement normal |
 
-> Le démo est isolé par `userId` : personne ne peut toucher vos vraies données depuis le
-> compte démo, et l'email `demo@floussi.app` n'est pas registrable.
+> Le démo est isolé par `userId` + un cookie de session préfixé `d.` : personne ne peut
+> toucher vos vraies données depuis le compte démo, l'email `demo@floussi.app` n'est pas
+> registrable, et `/api/health` affiche `"demo": {"mode": "ephemeral-local-file"}` pour
+> confirmer que le démo ne passe pas par Turso.
 
 ## Dépannage
 

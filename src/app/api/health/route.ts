@@ -1,5 +1,6 @@
 import { ok } from '@/lib/api-helpers'
 import { db, dbInfo } from '@/lib/db'
+import { demoStorageInfo } from '@/lib/demo-db'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,8 @@ export const dynamic = 'force-dynamic'
  *   - storage: "local"    → SQLite file fallback: on Vercel this means the
  *     Turso env vars are missing and the app will show NO DATA. The warning
  *     field spells out the exact fix.
+ *   - demo: ephemeral local file → the demo account does NOT consume Turso
+ *     storage (Task 26); its dataset lives in /tmp on the server instance.
  */
 export async function GET() {
   const started = Date.now()
@@ -33,6 +36,7 @@ export async function GET() {
     ok: reachable,
     storage: info.mode,
     creds: info.source,
+    demo: demoStorageInfo(),
     latencyMs: Date.now() - started,
     warning,
     hint: reachable ? undefined : 'Database unreachable — check the environment variables, then redeploy.',
