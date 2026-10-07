@@ -2,11 +2,11 @@
 
 import * as React from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Sparkles, User, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Play, Sparkles, User, Wallet } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LANGS, tr, type Key, type Lang } from '@/lib/i18n'
 import { getGuestLang, setGuestLang } from '@/lib/guest-lang'
-import { useLogin, useRegister } from './api'
+import { useDemoLogin, useLogin, useRegister } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -23,9 +23,14 @@ type Mode = 'login' | 'signup'
 const ERR_KEY_BY_MSG: Array<[RegExp, Key]> = [
   [/wrong email or password/i, 'auth.errCreds'],
   [/already exists/i, 'auth.errExists'],
+  [/reserved/i, 'auth.errReserved'],
   [/at least 6 characters/i, 'auth.errWeak'],
   [/valid email/i, 'auth.errEmail'],
   [/your name/i, 'auth.errName'],
+  // deployment-side failures (Vercel) — explained instead of a dead button
+  [/too many attempts/i, 'auth.errRate'],
+  [/starting up|self-repairs/i, 'auth.errBusy'],
+  [/not connected|not reachable|TURSO|DATABASE_URL|\/api\/health/i, 'auth.errDb'],
 ]
 
 export function AuthView() {
@@ -53,7 +58,8 @@ export function AuthView() {
 
   const login = useLogin()
   const register = useRegister()
-  const pending = login.isPending || register.isPending
+  const demo = useDemoLogin()
+  const pending = login.isPending || register.isPending || demo.isPending
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,6 +71,20 @@ export function AuthView() {
         await register.mutateAsync({ name, email, password })
       }
       enterApp() // session cookie is set — walk straight into the product
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      const hit = ERR_KEY_BY_MSG.find(([rx]) => rx.test(msg))
+      setError(hit ? t(hit[1]) : t('auth.errGeneric'))
+    }
+  }
+
+  /** One-click demo (Task 23) — no credentials, the server re-seeds a fake
+   *  dataset and hands out a session, exactly like a normal login. */
+  const tryDemo = async () => {
+    setError(null)
+    try {
+      await demo.mutateAsync()
+      enterApp()
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
       const hit = ERR_KEY_BY_MSG.find(([rx]) => rx.test(msg))
@@ -279,7 +299,25 @@ export function AuthView() {
               </Button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-muted-foreground">
+            {/* ── one-click demo (Task 23) ── */}
+            <div className="mt-6 flex items-center gap-3" aria-hidden>
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t('auth.or')}</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={tryDemo}
+              className="mt-4 w-full h-11 rounded-xl text-[15px] font-semibold border-primary/30 text-primary hover:bg-primary/5 hover:text-primary"
+            >
+              {demo.isPending ? <Loader2 className="size-4.5 animate-spin" /> : <Play className="size-4 fill-current" />}
+              {t('auth.demoBtn')}
+            </Button>
+            <p className="mt-2 text-center text-xs text-muted-foreground">{t('auth.demoHint')}</p>
+
+            <p className="mt-5 text-center text-sm text-muted-foreground">
               {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
               <button
                 onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}

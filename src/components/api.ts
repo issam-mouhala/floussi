@@ -599,6 +599,16 @@ export function useLogin() {
   })
 }
 
+/** One-click shared demo account (Task 23) — no credentials, server re-seeds
+ *  its fake dataset on every entry. */
+export function useDemoLogin() {
+  const bust = useInvalidateOnAuthChange()
+  return useMutation({
+    mutationFn: () => j<{ user: AuthUserDTO; seeded: number }>('/api/auth/demo', { method: 'POST' }),
+    onSuccess: () => bust(),
+  })
+}
+
 export function useRegister() {
   const bust = useInvalidateOnAuthChange()
   return useMutation({

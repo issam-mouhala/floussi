@@ -38,6 +38,7 @@ const SettingsView = dynamic(() => import('./settings-view').then((m) => m.Setti
 const GameView = dynamic(() => import('./game-view').then((m) => m.GameView))
 const AddExpenseSheet = dynamic(() => import('./add-expense-sheet').then((m) => m.AddExpenseSheet))
 import { LANGS } from '@/lib/i18n'
+import { DEMO_EMAIL } from '@/lib/types'
 import { useSettings, useUpdateSettings } from './api'
 
 const NAV: { view: View; icon: React.ElementType; key: Parameters<ReturnType<typeof useApp>['t']>[0] }[] = [
@@ -353,6 +354,7 @@ function UserMenu() {
   const user = auth?.user
   if (!user) return null
   const initials = (user.name || user.email).slice(0, 2).toUpperCase()
+  const isDemo = user.email.toLowerCase() === DEMO_EMAIL
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -369,8 +371,16 @@ function UserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56 rounded-xl">
         <DropdownMenuLabel className="font-normal">
-          <div className="text-[13px] font-semibold text-foreground">{user.name}</div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[13px] font-semibold text-foreground">{user.name}</div>
+            {isDemo && (
+              <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                Démo
+              </span>
+            )}
+          </div>
           <div className="text-xs text-muted-foreground truncate" dir="ltr">{user.email}</div>
+          {isDemo && <div className="mt-1 text-[11px] leading-snug text-muted-foreground">{t('user.demoNote')}</div>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem

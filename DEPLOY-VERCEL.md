@@ -76,6 +76,22 @@ Ouvrez **`https://<votre-app>.vercel.app/api/health`** :
 Vos comptes utilisateurs vivent dans Turso : utilisez **le même email / mot de passe** que
 dans l'app locale. Les données que vous voyiez en local sont les mêmes (une seule base cloud).
 
+## Le bouton « Essayer le compte démo »
+
+Le compte démo (1 clic, sans inscription) vit dans la **même base Turso** : il se crée tout
+seul au premier clic et se remplit d'un jeu de données d'exemple (~230 transactions) à chaque
+connexion. S'il ne marche pas sur votre déploiement :
+
+| Symptôme | Cause | Fix |
+|---|---|---|
+| Le bouton affiche « App non connectée à sa base de données » | Env vars Turso absentes sur Vercel | Étape 2 → ajouter les 2 variables → Redeploy → `/api/health` doit dire `storage: "turso"` |
+| « La démo démarre — réessayez » | Cold start serverless + seed en cours (rare) | Réessayer quelques secondes plus tard — le 2ᵉ clic passe |
+| « Trop de tentatives » | Rate-limit anti-abus (10 clics / 15 min / IP) | Attendre quelques minutes |
+| Rien ne se passe, erreur réseau dans la console | Fonction coupée par le timeout | Corrigé : la route démo demande explicitement `maxDuration = 60` — redéployez la dernière version du code |
+
+> Le démo est isolé par `userId` : personne ne peut toucher vos vraies données depuis le
+> compte démo, et l'email `demo@floussi.app` n'est pas registrable.
+
 ## Dépannage
 
 | Symptôme | Cause probable | Fix |

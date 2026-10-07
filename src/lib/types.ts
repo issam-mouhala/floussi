@@ -168,3 +168,7 @@ export interface DailyStatsDTO {
     unnecessaryPct: number
   }
 }
+
+/** Shared one-click demo account (Task 23) — its data is seeded + reset by the
+ *  server on every demo login. Registration of this email is blocked. */
+export const DEMO_EMAIL = 'demo@floussi.app'

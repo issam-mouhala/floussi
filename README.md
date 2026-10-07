@@ -4,6 +4,7 @@ Application web **fintech personnelle** premium : suivi de dépenses, Floussi IQ
 
 - **Trilingue natif** : English · Français · الدارجة (RTL première classe)
 - **Multi-comptes** : chaque utilisateur possède ses propres données (auth scrypt + sessions HttpOnly)
+- **Compte démo 1 clic** : les visiteurs testent l'app complète sur un jeu de données fictif réaliste — sans jamais toucher les comptes réels
 - **Zéro donnée de démo** : un compte neuf démarre vide — vos chiffres sont toujours les vôtres
 - **PWA** installable, dark mode, responsive 360 px → 1920 px
 
@@ -31,6 +32,14 @@ Application web **fintech personnelle** premium : suivi de dépenses, Floussi IQ
 - **Isolation** : chaque requête API est scopée par `userId` (transactions, catégories, budgets, objectifs, notifications, réglages, export)
 - Le **miroir navigateur** est étiqueté par compte : un appareil partagé ne peut jamais restaurer les données d'un compte dans un autre
 
+### Compte démo (accès public)
+
+- **Bouton « Essayer le compte démo »** sur l'écran de connexion — aucun identifiant, aucune inscription
+- Compte partagé `demo@floussi.app` : ~230 transactions fictives réalistes (~70 jours, Maroc, MAD), budgets, objectifs, IQ — **l'UI n'affiche jamais ces données comme réelles** (badge « Démo » dans le menu utilisateur)
+- **Reset à chaque entrée** : les données démo sont effacées et reconstruites (RNG déterministe) — chaque visiteur repart d'un compte propre, et les visiteurs peuvent ajouter/modifier librement sans rien casser
+- **Isolation totale** : tout est scopé au `userId` du compte démo ; les comptes réels sont intouchables ; l'email `demo@floussi.app` est réservé (non registrable)
+- Langue par défaut du démo : français — chaque testeur peut passer en EN / الدارجة depuis les réglages
+
 ## Démarrage
 
 ```bash
@@ -46,7 +55,7 @@ Mode cloud (recommandé) : suivre `TURSO-SETUP.md`, puis :
 TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… bun scripts/turso-activate.ts
 ```
 
-> Comptes : créez le vôtre via **Inscription** (l'application de production refuse toute injection de démo — l'endpoint `/api/seed` est désactivé).
+> Comptes : créez le vôtre via **Inscription** (l'application de production refuse toute injection de démo dans les comptes réels — l'endpoint `/api/seed` est désactivé). Les visiteurs utilisent le **compte démo** en 1 clic.
 
 ## Déploiement Vercel
 

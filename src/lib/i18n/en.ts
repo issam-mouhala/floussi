@@ -519,6 +519,14 @@ const en = {
   'auth.errEmail': 'Please enter a valid email address.',
   'auth.errName': 'Please enter your name.',
   'auth.errGeneric': 'Something went wrong — please try again.',
+  'auth.errBusy': 'The demo is warming up — try again in a few seconds.',
+  'auth.errRate': 'Too many attempts — wait a few minutes.',
+  'auth.errDb': 'App not connected to its database (deployment config) — see DEPLOY-VERCEL.md / check /api/health.',
+  'auth.or': 'or',
+  'auth.demoBtn': 'Try the demo account',
+  'auth.demoHint': 'One click — realistic sample data, resets on every login.',
+  'auth.errReserved': 'This email is reserved for the Floussi demo.',
+  'user.demoNote': 'Demo account — sample data resets on every login.',
 
   // yearly statistics (Task 21)
   'stats.title': 'Yearly statistics',

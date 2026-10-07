@@ -7,6 +7,9 @@ const isVercel = !!process.env.VERCEL;
 
 const nextConfig: NextConfig = {
   output: isVercel ? undefined : "standalone",
+  // Keep Prisma + libSQL out of the bundler: their native engines/binaries
+  // must ship as real files for Vercel serverless to load them.
+  serverExternalPackages: ["@prisma/client", "@libsql/client", "libsql"],
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,

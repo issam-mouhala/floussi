@@ -4,6 +4,10 @@ import { bad, ok, readJson } from '@/lib/api-helpers'
 import { requireUser } from '@/lib/auth'
 import { bustCache } from '@/lib/cache'
 
+// full-backup restore can write hundreds of rows over a remote DB
+export const runtime = 'nodejs'
+export const maxDuration = 60
+
 /** POST /api/import — restore a Floussi JSON backup INTO THE SESSION USER'S
  *  space. Replaces their transactions, budgets and goals; upserts their
  *  categories by slug; merges their settings. */

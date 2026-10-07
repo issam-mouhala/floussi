@@ -521,6 +521,14 @@ const fr: Dict = {
   'auth.errEmail': 'Veuillez saisir une adresse e-mail valide.',
   'auth.errName': 'Veuillez saisir votre nom.',
   'auth.errGeneric': 'Un problème est survenu — veuillez réessayer.',
+  'auth.errBusy': 'La démo démarre — réessayez dans quelques secondes.',
+  'auth.errRate': 'Trop de tentatives — attendez quelques minutes.',
+  'auth.errDb': 'App non connectée à sa base de données (config du déploiement) — voir DEPLOY-VERCEL.md / vérifier /api/health.',
+  'auth.or': 'ou',
+  'auth.demoBtn': 'Essayer le compte démo',
+  'auth.demoHint': 'Un clic — données d’exemple réalistes, remises à zéro à chaque connexion.',
+  'auth.errReserved': 'Cet email est réservé à la démo Floussi.',
+  'user.demoNote': 'Compte démo — les données d’exemple sont réinitialisées à chaque connexion.',
 
   // yearly statistics (Task 21)
   'stats.title': 'Statistiques annuelles',

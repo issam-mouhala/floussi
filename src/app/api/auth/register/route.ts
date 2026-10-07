@@ -2,7 +2,12 @@ import { db } from '@/lib/db'
 import { bad, ok, readJson } from '@/lib/api-helpers'
 import { createSession, hashPassword, validateRegistration } from '@/lib/auth'
 import { CATEGORIES } from '@/lib/seed'
+import { DEMO_EMAIL } from '@/lib/types'
 import { bustCache } from '@/lib/cache'
+
+// clones 13 categories + settings over a remote DB — allow cold-start slack
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
 /** POST /api/auth/register — create an account.
  *
@@ -27,6 +32,7 @@ export async function POST(req: Request) {
 
   const existing = await db.user.findUnique({ where: { email } })
   if (existing) return bad('An account already exists with this email', 409)
+  if (email === DEMO_EMAIL) return bad('This email is reserved for the Floussi demo', 409)
 
   const user = await db.user.create({
     data: {
