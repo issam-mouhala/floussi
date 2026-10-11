@@ -47,9 +47,13 @@ export async function GET(req: Request) {
       include: { category: true },
       orderBy: { date: sort === 'old' ? 'asc' : 'desc' },
     })
-    if (essential === 'yes') rows = rows.filter((t) => (t.necessary ?? t.category.essential) === true)
-    if (essential === 'no') rows = rows.filter((t) => (t.necessary ?? t.category.essential) === false)
-    if (q) {
+    // JS post-filters (essential / keyword / weekday / exact amount) — shared by
+    // the main window AND the previous-period comparison below
+    const postFilter = (list: typeof rows) => {
+      let out = list
+      if (essential === 'yes') out = out.filter((t) => (t.necessary ?? t.category.essential) === true)
+      if (essential === 'no') out = out.filter((t) => (t.necessary ?? t.category.essential) === false)
+      if (q) {
       // fuzzy keyword match — "khobze" finds "khobzate" (darija spelling varies):
       // token hits when included, or shares a long-enough common prefix with a word
       const tokens = q.toLowerCase().split(/\s+/).filter(Boolean)
@@ -97,23 +101,26 @@ export async function GET(req: Request) {
           return p >= 4 && p / Math.min(w.length, nd.length) >= 0.6
         }) ||
         hay.split(/\s+/).some(skHit(nd))
-      rows = rows.filter(
-        (t) =>
-          tokens.some((nd) => fuzzy((t.note ?? '').toLowerCase(), nd)) ||
-          tokens.some((nd) => fuzzy(t.category.nameEn.toLowerCase(), nd)) ||
-          tokens.some((nd) => fuzzy(t.category.nameFr.toLowerCase(), nd)) ||
-          tokens.some((nd) => fuzzy(t.category.nameAr, nd) || t.category.nameAr.split(/\s+/).some(skHit(nd)))
-      )
+        out = out.filter(
+          (t) =>
+            tokens.some((nd) => fuzzy((t.note ?? '').toLowerCase(), nd)) ||
+            tokens.some((nd) => fuzzy(t.category.nameEn.toLowerCase(), nd)) ||
+            tokens.some((nd) => fuzzy(t.category.nameFr.toLowerCase(), nd)) ||
+            tokens.some((nd) => fuzzy(t.category.nameAr, nd) || t.category.nameAr.split(/\s+/).some(skHit(nd)))
+        )
+      }
+      // smart-search extras — Casablanca weekday (+1h shift, same as client grouping)
+      if (weekday !== '') {
+        const wd = Number(weekday)
+        if (Number.isInteger(wd) && wd >= 0 && wd <= 6) out = out.filter((t) => new Date(t.date.getTime() + 3_600_000).getUTCDay() === wd)
+      }
+      if (amount !== '') {
+        const av = Number(amount)
+        if (isFinite(av) && av > 0) out = out.filter((t) => Math.abs(t.amount - av) < 0.005)
+      }
+      return out
     }
-    // smart-search extras — Casablanca weekday (+1h shift, same as client grouping)
-    if (weekday !== '') {
-      const wd = Number(weekday)
-      if (Number.isInteger(wd) && wd >= 0 && wd <= 6) rows = rows.filter((t) => new Date(t.date.getTime() + 3_600_000).getUTCDay() === wd)
-    }
-    if (amount !== '') {
-      const av = Number(amount)
-      if (isFinite(av) && av > 0) rows = rows.filter((t) => Math.abs(t.amount - av) < 0.005)
-    }
+    rows = postFilter(rows)
     if (sort === 'high') rows.sort((a, b) => b.amount - a.amount)
     if (sort === 'low') rows.sort((a, b) => a.amount - b.amount)
 
@@ -126,9 +133,44 @@ export async function GET(req: Request) {
     const maxTx = rows.reduce<(typeof rows)[number] | null>((m, t) => (!m || t.amount > m.amount ? t : m), null)
     const wdCount = [0, 0, 0, 0, 0, 0, 0]
     let ess = 0
+    let essSum = 0
+    let recSum = 0
+    const dayKeys = new Set<string>()
     for (const t of rows) {
       wdCount[new Date(t.date.getTime() + 3_600_000).getUTCDay()]++
-      if ((t.necessary ?? t.category.essential) === true) ess++
+      if ((t.necessary ?? t.category.essential) === true) {
+        ess++
+        essSum += t.amount
+      }
+      if (t.isRecurring) recSum += t.amount
+      dayKeys.add(new Date(t.date.getTime() + 3_600_000).toISOString().slice(0, 10))
+    }
+
+    // previous-period comparison — same filters, window shifted back by its
+    // own length (only meaningful when an explicit range start exists)
+    const fDate = from ? new Date(from) : null
+    let prev: { n: number; sum: number; essTotal: number } | null = null
+    if (fDate && !isNaN(fDate.getTime())) {
+      const tDate = to ? new Date(to) : null
+      const endMs = tDate && !isNaN(tDate.getTime()) ? tDate.getTime() : Date.now()
+      const len = Math.max(endMs - fDate.getTime(), 3_600_000)
+      const prevRows = postFilter(
+        await db.transaction.findMany({
+          where: { ...where, date: { gte: new Date(fDate.getTime() - len), lt: fDate } },
+          include: { category: true },
+        })
+      )
+      let pSum = 0
+      let pEss = 0
+      for (const t of prevRows) {
+        pSum += t.amount
+        if ((t.necessary ?? t.category.essential) === true) pEss += t.amount
+      }
+      prev = {
+        n: prevRows.length,
+        sum: Math.round(pSum * 100) / 100,
+        essTotal: Math.round(pEss * 100) / 100,
+      }
     }
     let topDay: number | null = null
     let topDayN = 0
@@ -147,6 +189,10 @@ export async function GET(req: Request) {
       essPct: rows.length ? Math.round((ess * 100) / rows.length) : 0,
       topDay: rows.length >= 5 ? topDay : null,
       topDayPct: rows.length ? Math.round((topDayN * 100) / rows.length) : 0,
+      essTotal: Math.round(essSum * 100) / 100,
+      recTotal: Math.round(recSum * 100) / 100,
+      days: dayKeys.size,
+      prev,
     }
 
     // exact per-category sums over the WHOLE filtered set (not just the page)

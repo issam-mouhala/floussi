@@ -1,13 +1,13 @@
 'use client'
 
 import * as React from 'react'
-import { Search, MoreHorizontal, Pencil, Trash2, Repeat, Info, LayoutList, PieChart, CalendarDays, Sparkles, Coins, X } from 'lucide-react'
+import { Search, MoreHorizontal, Pencil, Trash2, Repeat, Info, LayoutList, PieChart, CalendarDays, Sparkles, Coins, X, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { useApp } from './app-context'
 import { useAppStore } from '@/lib/store'
 import { useCategories, useDeleteTransaction, useTransactions, type CatSumDTO } from './api'
 import type { TransactionDTO } from '@/lib/types'
 import { formatMAD } from '@/lib/money'
-import { parseSmartQuery, buildSmartComment, type SmartChip } from '@/lib/smart-search'
+import { parseSmartQuery, buildSmartComment, shortDate, weekdayName, type SmartChip } from '@/lib/smart-search'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -146,6 +146,59 @@ export function TransactionsView() {
     () => (data ? buildSmartComment(sm, data.agg, data.total, lang) : ''),
     [sm, data, lang]
   )
+
+  // ---- smart stats — shown as soon as ANY filter is active (date range,
+  // ---- category, essential, recurring or search), not only for search text
+  const statsActive = smartActive || essential !== '' || recurring === 'yes' || category !== '' || datePreset !== 'all'
+  const agg = data?.agg
+  const sum = agg?.sum ?? 0
+  const days = agg?.days ?? 0
+  const essTotal = agg?.essTotal ?? 0
+  const recTotal = agg?.recTotal ?? 0
+  const essPct = agg?.essPct ?? 0
+
+  // biggest slice of spending — only meaningful with ≥2 categories
+  const topCat = React.useMemo(() => {
+    const cs = data?.catSums ?? []
+    return cs.length >= 2 && sum > 0 ? cs[0] : null
+  }, [data, sum])
+
+  // trend vs the previous period of the same length (server-computed)
+  const prevLine = React.useMemo(() => {
+    const p = agg?.prev
+    if (!p) return null
+    if (p.sum <= 0) {
+      return sum > 0 ? { Icon: Info, cls: 'bg-muted text-muted-foreground', key: 'tx.statsNoPrev' as Key, pct: 0 } : null
+    }
+    const delta = Math.round(((sum - p.sum) / p.sum) * 100)
+    if (delta <= -2) {
+      return { Icon: TrendingDown, cls: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400', key: 'tx.statsPrevDown' as Key, pct: Math.abs(delta) }
+    }
+    if (delta >= 2) {
+      return { Icon: TrendingUp, cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400', key: 'tx.statsPrevUp' as Key, pct: delta }
+    }
+    return { Icon: Minus, cls: 'bg-muted text-muted-foreground', key: 'tx.statsPrevFlat' as Key, pct: 0 }
+  }, [agg, sum])
+
+  // narrative comment for filter-only mode (search mode keeps buildSmartComment)
+  const filterComment = React.useMemo(() => {
+    if (!data || !agg) return ''
+    const parts: string[] = []
+    const fsum = formatMAD(agg.sum, lang)
+    const catName = category ? cats?.find((c) => c.id === category)?.name ?? null : null
+    if (catName) parts.push(t('tx.statsCmtCat', { cat: catName, n: data.total, sum: fsum }))
+    else if (sm.from || range.from) parts.push(t('tx.cmtPeriod', { n: data.total, sum: fsum }))
+    else parts.push(t('tx.statsCmtSel', { n: data.total, sum: fsum }))
+    if (agg.essPct > 0 && agg.essPct < 100) parts.push(t('tx.cmtEss', { pct: agg.essPct }))
+    if (agg.max > 0) {
+      if (agg.maxNote) parts.push(t('tx.cmtMax', { max: formatMAD(agg.max, lang), note: agg.maxNote, date: shortDate(agg.maxDate, lang) }))
+      else parts.push(t('tx.cmtMaxNo', { max: formatMAD(agg.max, lang), date: shortDate(agg.maxDate, lang) }))
+    }
+    if (agg.topDay != null && data.total >= 5 && agg.topDayPct >= 40) {
+      parts.push(t('tx.cmtTopDay', { day: weekdayName(agg.topDay, lang), pct: agg.topDayPct }))
+    }
+    return parts.join(' ')
+  }, [data, agg, category, cats, sm.from, range.from, t, lang])
 
   const openDetail = React.useCallback((id: string) => setDetailId(id), [])
   const editTx = React.useCallback(
@@ -320,14 +373,19 @@ export function TransactionsView() {
         </div>
       </div>
 
-      {/* smart search — result summary + intelligent comment */}
-      {smartActive && data && (
-        <div className="rounded-3xl border border-primary/25 bg-gradient-to-br from-primary/12 via-primary/5 to-transparent p-4 space-y-3 card-shadow">
+      {/* smart stats — intelligent summary as soon as any filter/search is active */}
+      {statsActive && data && agg && (total > 0 || smartActive) && (
+        <div
+          className={cn(
+            'rounded-3xl border border-primary/25 bg-gradient-to-br from-primary/12 via-primary/5 to-transparent p-4 space-y-3 card-shadow transition-opacity',
+            isFetching && !isLoading && 'opacity-60'
+          )}
+        >
           <div className="flex items-center gap-2">
             <span className="size-7 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
               <Sparkles className="size-4" />
             </span>
-            <p className="text-sm font-bold">{t('tx.smartTitle')}</p>
+            <p className="text-sm font-bold">{smartActive ? t('tx.smartTitle') : t('tx.statsTitle')}</p>
           </div>
           {sm.chips.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -358,24 +416,77 @@ export function TransactionsView() {
           <div className="flex items-end justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <p className="text-[11px] text-muted-foreground font-medium">{t('tx.smartTotal')}</p>
-              <p className="text-[26px] leading-none font-bold font-num mt-1">{formatMAD(data.agg.sum, lang)}</p>
+              <p className="text-[26px] leading-none font-bold font-num mt-1">{formatMAD(sum, lang)}</p>
             </div>
             <div className="flex gap-4 text-end">
               <div>
-                <p className="text-sm font-bold font-num leading-none">{data.total}</p>
+                <p className="text-sm font-bold font-num leading-none">{total}</p>
                 <p className="text-[10px] text-muted-foreground mt-1">{t('tx.smartN')}</p>
               </div>
               <div>
-                <p className="text-sm font-bold font-num leading-none">{formatMAD(data.agg.avg, lang)}</p>
+                <p className="text-sm font-bold font-num leading-none">{formatMAD(agg.avg, lang)}</p>
                 <p className="text-[10px] text-muted-foreground mt-1">{t('tx.smartAvg')}</p>
-              </div>
-              <div>
-                <p className="text-sm font-bold font-num leading-none">{formatMAD(data.agg.max, lang)}</p>
-                <p className="text-[10px] text-muted-foreground mt-1">{t('tx.smartMax')}</p>
               </div>
             </div>
           </div>
-          <p className="text-xs leading-relaxed text-muted-foreground border-t border-primary/10 pt-2.5">{comment}</p>
+          {/* intelligent tiles — rhythm, split, peak */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="rounded-2xl bg-background/60 border p-2.5 min-w-0">
+              <p className="text-sm font-bold font-num leading-none">{days > 0 ? formatMAD(sum / days, lang) : '—'}</p>
+              <p className="text-[10px] text-muted-foreground mt-1.5">{t('tx.statsPerDay')}</p>
+            </div>
+            <div className="rounded-2xl bg-background/60 border p-2.5 min-w-0">
+              <p className="text-sm font-bold font-num leading-none text-emerald-600 dark:text-emerald-400">{formatMAD(essTotal, lang)}</p>
+              <p className="text-[10px] text-muted-foreground mt-1.5 truncate">{t('common.essential')} · {essPct}%</p>
+            </div>
+            <div className="rounded-2xl bg-background/60 border p-2.5 min-w-0">
+              <p className="text-sm font-bold font-num leading-none text-amber-600 dark:text-amber-400">{formatMAD(Math.max(sum - essTotal, 0), lang)}</p>
+              <p className="text-[10px] text-muted-foreground mt-1.5 truncate">{t('common.avoidable')} · {100 - essPct}%</p>
+            </div>
+            <div className="rounded-2xl bg-background/60 border p-2.5 min-w-0">
+              <p className="text-sm font-bold font-num leading-none">{agg.max > 0 ? formatMAD(agg.max, lang) : '—'}</p>
+              <p className="text-[10px] text-muted-foreground mt-1.5 truncate">{t('tx.statsBigExpense')}</p>
+            </div>
+          </div>
+          {/* top category + fixed charges bars */}
+          {(topCat || recTotal > 0) && (
+            <div className={cn('grid gap-3', topCat && recTotal > 0 && 'sm:grid-cols-2')}>
+              {topCat && (
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-muted-foreground truncate">{t('tx.statsTopCat', { cat: topCat.name, pct: Math.round((topCat.total / sum) * 100) })}</span>
+                    <span className="font-num font-semibold shrink-0">{formatMAD(topCat.total, lang)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.round((topCat.total / sum) * 100)}%`, background: topCat.color }} />
+                  </div>
+                </div>
+              )}
+              {recTotal > 0 && (
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-muted-foreground truncate">{t('common.recurring')} · {sum > 0 ? Math.round((recTotal / sum) * 100) : 0}%</span>
+                    <span className="font-num font-semibold shrink-0">{formatMAD(recTotal, lang)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-violet-500" style={{ width: `${sum > 0 ? Math.round((recTotal / sum) * 100) : 0}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {/* trend vs the previous period of the same length */}
+          {prevLine && (
+            <div className="flex items-center gap-2 border-t border-primary/10 pt-2.5">
+              <span className={cn('size-6 rounded-lg flex items-center justify-center shrink-0', prevLine.cls)}>
+                <prevLine.Icon className="size-3.5" />
+              </span>
+              <p className="text-xs font-medium">{t(prevLine.key, prevLine.pct > 0 ? { pct: prevLine.pct } : undefined)}</p>
+            </div>
+          )}
+          <p className="text-xs leading-relaxed text-muted-foreground border-t border-primary/10 pt-2.5">
+            {smartActive ? comment : filterComment}
+          </p>
         </div>
       )}
 

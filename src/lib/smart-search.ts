@@ -65,6 +65,11 @@ export interface SmartAgg {
   essPct: number
   topDay: number | null
   topDayPct: number
+  /** optional — smart-stats additions (essTotal/recTotal in MAD, distinct days, prev-period window) */
+  essTotal?: number
+  recTotal?: number
+  days?: number
+  prev?: { n: number; sum: number; essTotal: number } | null
 }
 
 // ------------------------------------------------------- normalization
@@ -250,7 +255,8 @@ function monthName(y: number, m0: number, lang: Lang): string {
   return new Intl.DateTimeFormat(intlLocale(lang), { month: 'long', year: 'numeric' }).format(new Date(y, m0, 1))
 }
 
-function shortDate(iso: string | null, lang: Lang): string {
+/** Short localized date — "12 déc." (private helper made shared for the stats panel). */
+export function shortDate(iso: string | null, lang: Lang): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''

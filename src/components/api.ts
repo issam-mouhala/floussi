@@ -85,6 +85,14 @@ export function txQueryKey(f: TxFilters) {
   return ['transactions', f.q ?? '', f.category ?? '', f.essential ?? '', f.recurring ?? '', f.from ?? '', f.to ?? '', f.weekday ?? '', f.amount ?? '', f.sort ?? 'new']
 }
 
+/** Previous-period comparison (same filters, window shifted back) — null when
+ *  no explicit range start is part of the filter. */
+export interface TxPrevAgg {
+  n: number
+  sum: number
+  essTotal: number
+}
+
 /** Aggregate over the whole filtered set — powers the smart-search card. */
 export interface TxAgg {
   sum: number
@@ -95,6 +103,12 @@ export interface TxAgg {
   essPct: number
   topDay: number | null
   topDayPct: number
+  /** optional — added for the smart-stats panel (older cached payloads lack them) */
+  essTotal?: number
+  recTotal?: number
+  /** distinct Casablanca days with activity in the filtered set */
+  days?: number
+  prev?: TxPrevAgg | null
 }
 
 export interface CatSumDTO {
