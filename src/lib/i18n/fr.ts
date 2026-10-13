@@ -225,6 +225,7 @@ const fr: Dict = {
   'coach.s5': 'Compare ce mois avec le mois dernier',
   'coach.typing': 'Le coach réfléchit…',
   'coach.error': 'Impossible de joindre le coach. Réessayez.',
+  'coach.errorCfg': "Le coach IA n'est pas encore actif sur ce déploiement — le serveur a besoin des variables ZAI_API_KEY et ZAI_BASE_URL (voir DEPLOY-VERCEL.md).",
   'coach.contextTag': 'Données live : {tx} transactions · {month} dépensés ce mois',
   'coach.clear': 'Nouvelle discussion',
 

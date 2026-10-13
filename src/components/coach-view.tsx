@@ -52,11 +52,16 @@ export function CoachView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-12), lang }),
       })
-      const body = (await res.json()) as { message?: string; error?: string }
-      if (!res.ok || !body.message) throw new Error(body.error || t('coach.error'))
+      const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string; code?: string }
+      if (!res.ok || !body.message) {
+        // Task 29 — the server tells us WHEN the deployment lacks AI config:
+        // show the actionable setup hint instead of a generic failure.
+        throw new Error(body.code === 'ai_config' ? 'ai_config' : body.error || t('coach.error'))
+      }
       setMessages([...next, { role: 'assistant', content: body.message }])
-    } catch {
-      setMessages([...next, { role: 'assistant', content: t('coach.error') }])
+    } catch (err) {
+      const cfg = err instanceof Error && err.message === 'ai_config'
+      setMessages([...next, { role: 'assistant', content: t(cfg ? 'coach.errorCfg' : 'coach.error') }])
     } finally {
       setSending(false)
     }

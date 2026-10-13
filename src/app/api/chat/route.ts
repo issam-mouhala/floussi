@@ -1,4 +1,4 @@
-import ZAI from 'z-ai-web-dev-sdk'
+import { AiNotConfiguredError, getZai } from '@/lib/ai'
 import { bad, ok, readJson } from '@/lib/api-helpers'
 import { requireUser } from '@/lib/auth'
 import { buildCoachBriefing } from '@/lib/coach-context'
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
       buildCoachBriefing(briefingLang, user.id),
     ])
 
-    const zai = await ZAI.create()
+    const zai = await getZai()
     const messages = [
       { role: 'system' as const, content: systemPrompt(settings.displayName, briefing.text, briefing.txCount, arabicLetters >= 5) },
       ...history,
@@ -131,6 +131,20 @@ export async function POST(req: Request) {
     if (!content) return bad('Empty response from coach', 502)
     return ok({ message: darijifyCurrency(String(content).trim()) })
   } catch (e) {
+    // Task 29 — a deployment without AI credentials must be OBVIOUS: the
+    // client reads `code` and shows the setup hint (coach.errorCfg) instead
+    // of a generic «could not reach the coach».
+    if (e instanceof AiNotConfiguredError) {
+      console.error('chat: AI not configured on this deployment')
+      return Response.json(
+        {
+          error:
+            'AI coach not configured — add ZAI_API_KEY and ZAI_BASE_URL in Vercel → Settings → Environment Variables (see DEPLOY-VERCEL.md), then redeploy.',
+          code: 'ai_config',
+        },
+        { status: 503 },
+      )
+    }
     console.error('chat error', e)
     return bad('Coach unavailable, please retry', 502)
   }

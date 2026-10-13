@@ -145,7 +145,22 @@ function createDb(): PrismaClient {
 // Outside a request (scripts, instrumentation boot) there is no ambient
 // client, so `db` simply is the main client — previous behaviour.
 
-const ambientDb = new AsyncLocalStorage<PrismaClient>()
+const ambientDbStore = globalThis as unknown as {
+  __floussiAmbientDb?: AsyncLocalStorage<PrismaClient>
+}
+
+/** Process-wide AsyncLocalStorage singleton (Task 28).
+ *
+ *  ⚠ This MUST live on globalThis, exactly like the `db` proxy itself: this
+ *  module can be evaluated more than once per process (Turbopack dev chunks,
+ *  HMR re-evaluation, route-level bundling). The proxy is cached on
+ *  globalThis from the FIRST evaluation — if each evaluation created its own
+ *  AsyncLocalStorage, `setAmbientDb` would install the demo client into the
+ *  newest ALS while the cached proxy still read the original one, and demo
+ *  sessions would silently fall back to the MAIN database (the exact bug
+ *  reported as « try demo ne donne aucun résultat » after a sandbox rebuild).
+ *  Sharing one ALS makes routing identity-proof across evaluations. */
+const ambientDb = (ambientDbStore.__floussiAmbientDb ??= new AsyncLocalStorage<PrismaClient>())
 
 /** Make `client` THE database for the remainder of the current request.
  *  Must be called synchronously (before any await) in the request path. */
@@ -179,7 +194,7 @@ function makeRoutable(main: PrismaClient): PrismaClient {
 }
 
 const mainRaw = globalForPrisma.main ?? createDb()
-if (process.env.NODE_ENV !== 'production') globalForPrisma.main = mainRaw
+globalForPrisma.main = mainRaw
 
 /** The raw main client — for code that must ALWAYS target the real accounts
  *  DB regardless of any demo ambient (purges, boot jobs, auth lookups). */

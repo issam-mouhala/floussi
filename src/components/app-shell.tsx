@@ -115,7 +115,7 @@ function LangQuick() {
           )}
           aria-label={l.native}
         >
-          {l.code === 'en' ? 'EN' : l.code === 'fr' ? 'FR' : 'دار'}
+          {l.code === 'en' ? 'EN' : l.code === 'fr' ? 'FR' : 'دارجة'}
         </button>
       ))}
       {settings === undefined && <span className="sr-only">language</span>}

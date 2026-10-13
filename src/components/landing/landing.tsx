@@ -95,7 +95,7 @@ function Navbar({ c }: { c: LandingCopy }) {
                 aria-label={l.native}
                 aria-pressed={l.code === lang}
               >
-                {l.code === 'en' ? 'EN' : l.code === 'fr' ? 'FR' : 'دار'}
+                {l.code === 'en' ? 'EN' : l.code === 'fr' ? 'FR' : 'دارجة'}
               </button>
             ))}
           </div>

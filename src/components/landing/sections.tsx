@@ -209,7 +209,7 @@ export function TrilingualSection({ c }: { c: LandingCopy }) {
   const cards = [
     { name: c.triEn, dir: 'ltr' as const, phrase: t('app.tagline'), flag: 'EN' },
     { name: c.triFr, dir: 'ltr' as const, phrase: t('app.tagline'), flag: 'FR' },
-    { name: c.triAry, dir: 'rtl' as const, phrase: t('app.tagline'), flag: 'دار' },
+    { name: c.triAry, dir: 'rtl' as const, phrase: t('app.tagline'), flag: 'دارجة' },
   ]
   return (
     <section className="py-14 sm:py-20">

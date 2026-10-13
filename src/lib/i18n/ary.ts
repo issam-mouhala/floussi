@@ -226,6 +226,7 @@ const ary: Dict = {
   'coach.s5': 'قارن هاد الشهر مع الشهر لي فات',
   'coach.typing': 'الكوتش كيحسب…',
   'coach.error': 'ما قدرناش نوصلو للكوتش. عاود جرب.',
+  'coach.errorCfg': 'الكوتش الذكي مازال ماشي مفعل فهاد النشر — السيرفر خاصو ZAI_API_KEY و ZAI_BASE_URL فالإعدادات ديال النشر (شوف DEPLOY-VERCEL.md).',
   'coach.contextTag': 'معطيات مباشرة: {tx} عملية · {month} هاد الشهر',
   'coach.clear': 'محادثة جديدة',
 
@@ -509,9 +510,9 @@ const ary: Dict = {
   'game.streak': 'سلسلة',
   'game.sound': 'الصوت',
   // auth (Task 21)
-  'auth.welcome': 'مرحبا ليك مرة أخرى',
+  'auth.welcome': 'مرحبا بيك مرة أخرى',
   'auth.welcomeNew': 'صاوب حسابك',
-  'auth.subtitle': 'دخل باش تحل الحساب ديالك ففلوسي.',
+  'auth.subtitle': 'دخل باش توصل للحساب ديالك ف فلوسي.',
   'auth.subtitleNew': 'بدا تتبع الفلوس ديالك فدقائق.',
   'auth.tabLogin': 'دخول',
   'auth.tabSignup': 'حساب جديد',
@@ -520,7 +521,7 @@ const ary: Dict = {
   'auth.email': 'الإيميل',
   'auth.emailPh': 'you@example.com',
   'auth.password': 'كلمة السر',
-  'auth.loginBtn': 'حل الحساب ديالي',
+  'auth.loginBtn': 'دخل لحسابي',
   'auth.signupBtn': 'صاوب الحساب ديالي',
   'auth.haveAccount': 'عندك حساب؟',
   'auth.noAccount': 'جديد على فلوسي؟',

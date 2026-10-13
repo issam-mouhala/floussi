@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 import { mainDb } from '@/lib/db'
 import { randomBytes } from 'node:crypto'
 import { hashPassword } from '@/lib/auth'
+import { bustCache } from '@/lib/cache'
 import { CATEGORIES } from '@/lib/seed'
 import { DEMO_EMAIL } from '@/lib/types'
 
@@ -241,11 +242,20 @@ function buildDemoTransactions(): DemoTx[] {
     if (chance(0.02)) push(dayUtc, 15, 'other', pick(['Divers', 'Petit bricolage']), money(20, 120, 5))
   }
 
-  // guaranteed recent activity — the dashboard never opens on an empty "today"
+  // guaranteed CURRENT-day activity — the dashboard never opens on an empty
+  // "aujourd'hui", whatever the hour the visitor arrives (Task 28). Notes
+  // stay in French to match the rest of the seeded dataset.
   push(endUtc, 9, 'coffee', 'Café du matin', money(8, 20))
-  push(endUtc, 12, 'groceries', 'Hanout', money(15, 40))
-  push(endUtc - DAY_MS, 18, 'transport', 'Taxi Casa', money(14, 38))
+  push(endUtc, 10, 'transport', 'Taxi — petit trajet', money(14, 32))
+  push(endUtc, 12, 'groceries', 'Hanout — pain et lait', money(15, 40))
+  push(endUtc, 13, 'coffee', 'Thé à la menthe', money(8, 25))
+  push(endUtc, 16, 'delivery', 'Glovo — goûter', money(35, 75))
+  push(endUtc, 19, 'groceries', 'Courses du soir', money(18, 50))
+  // yesterday — keeps the 14-day chart alive right behind today
   push(endUtc - DAY_MS, 9, 'coffee', 'Café — pause', money(8, 25))
+  push(endUtc - DAY_MS, 13, 'groceries', 'Souk — légumes', money(45, 90, 5))
+  push(endUtc - DAY_MS, 18, 'transport', 'Taxi Casa', money(14, 38))
+  push(endUtc - DAY_MS, 20, 'restaurants', 'Restaurant en famille', money(95, 180, 5))
 
   return txs
 }
@@ -290,4 +300,56 @@ export async function seedDemoData(client: PrismaClient, userId: string): Promis
   })
 
   return { transactions: txs.length }
+}
+
+// ---------------------------------------------------------- dataset freshness
+//
+// The ephemeral demo file lives as long as its server instance (warm Vercel
+// lambda, long-lived dev server). A visitor who keeps a demo cookie across
+// days would otherwise stare at a dataset frozen at the seed date — an empty
+// "today". Once per process per day we look at the newest demo transaction
+// and silently rebuild the whole dataset when it no longer contains the
+// current day, so every demo session always shows live, current-day data
+// (Task 28: « ajouter des données incluant le jour actuel »).
+
+let freshnessCheckedDay: string | undefined
+let freshnessRun: Promise<void> | null = null
+
+const utcDayKey = (d = new Date()): string =>
+  `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`
+
+async function doFreshnessRefresh(client: PrismaClient, today: string): Promise<void> {
+  const newest = await client.transaction.findFirst({
+    where: { userId: DEMO_USER_ID },
+    orderBy: { date: 'desc' },
+    select: { date: true },
+  })
+  const n = new Date()
+  const dayStartUtc = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+  if (!newest || newest.date.getTime() < dayStartUtc) {
+    // the dataset no longer contains the current day → rebuild it in place
+    await ensureDemoUser(client)
+    await resetDemoData(client, DEMO_USER_ID)
+    await seedDemoData(client, DEMO_USER_ID)
+    bustCache()
+    console.log('[demo] dataset refreshed to include the current day')
+  }
+  freshnessCheckedDay = today
+}
+
+/** Keep the demo dataset anchored to today. Called on every demo-session
+ *  request; self-guards to one check per process per day and dedupes
+ *  concurrent first-of-day requests behind a shared promise. Never throws. */
+export function refreshDemoDatasetIfStale(client: PrismaClient): Promise<void> {
+  const today = utcDayKey()
+  if (freshnessCheckedDay === today) return Promise.resolve()
+  if (!freshnessRun) {
+    freshnessRun = doFreshnessRefresh(client, today).catch((e) => {
+      // not marking the day as done → retried on the next request
+      console.warn('[demo] freshness check skipped:', e instanceof Error ? e.message : e)
+    }).finally(() => {
+      freshnessRun = null
+    })
+  }
+  return freshnessRun
 }

@@ -47,9 +47,19 @@ git push -u origin main
 |---|---|
 | `TURSO_DATABASE_URL` | `libsql://floussi-xxxx.turso.io` |
 | `TURSO_AUTH_TOKEN` | `eyJ…` (votre token) |
+| `ZAI_BASE_URL` | URL de l'API IA compatible OpenAI, préfixe de version inclus (ex. `https://api.z.ai/api/paas/v4`) |
+| `ZAI_API_KEY` | la clé API correspondante |
 
 > Variante acceptée : une seule variable `DATABASE_URL` = `libsql://floussi-xxxx.turso.io?authToken=eyJ…`
 > (le token est extrait automatiquement). `TURSO_*` reste prioritaire si les deux sont présents.
+>
+> **`ZAI_BASE_URL` + `ZAI_API_KEY` alimentent le coach IA** (page « Coach »). Sans elles, le
+> coach affiche un message de configuration et `/api/health` rapporte `"ai": "missing"` —
+> tout le reste de l'app fonctionne normalement. Ajoutez-les **pour tous les environnements**
+> (Production, Preview, Development), puis **Redeploy**.
+>
+> Optionnel — si votre passerelle IA exige des en-têtes supplémentaires : `ZAI_TOKEN`
+> (en-tête `X-Token`), `ZAI_CHAT_ID` (`X-Chat-Id`), `ZAI_USER_ID` (`X-User-Id`).
 
 4. **Deploy**. Le build exécute `prisma generate && next build` automatiquement.
 
@@ -62,6 +72,8 @@ Ouvrez **`https://<votre-app>.vercel.app/api/health`** :
   "ok": true,
   "storage": "turso",        ← doit être "turso"
   "creds": "env",
+  "ai": "env",               ← "env" = coach IA opérationnel ; "missing" = ajouter ZAI_*
+  "demo": { "mode": "ephemeral-local-file", … },
   "latencyMs": 42
 }
 ```
@@ -109,7 +121,7 @@ En cas de problème :
 | Aucune donnée, `/api/health` → `storage: "local"` | Env vars absentes ou mal nommées | Ajouter `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` → Redeploy |
 | `/api/health` → `ok: false` | URL/token invalide ou base en pause | Recréer un token (Tokens → Create Token), vérifier l'URL |
 | « You don't have an account » avec le bon email | Ce n'est pas la même base Turso | Vérifier que l'URL pointe vers la base utilisée par l'app locale |
-| Le coach IA répond « indisponible » | Le service du coach (z-ai) requiert des identifiants dans votre environnement | Toutes les autres fonctions marchent ; le coach se rattrape proprement |
+| Le coach IA répond « non configuré / indisponible » | Variables `ZAI_BASE_URL` + `ZAI_API_KEY` absentes du déploiement (Task 29 : `/api/health` → `"ai": "missing"`) | Ajouter les deux variables pour tous les environnements → Redeploy |
 | Le build échoue sur `prisma generate` | Installation incomplète | Vérifier que `prisma` est bien dans `dependencies` (c'est le cas) |
 
 ## Notes techniques

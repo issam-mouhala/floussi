@@ -223,6 +223,7 @@ const en = {
   'coach.s5': 'Compare this month with last month',
   'coach.typing': 'Coach is thinking…',
   'coach.error': 'Could not reach the coach. Please try again.',
+  'coach.errorCfg': 'The AI coach is not active on this deployment yet — the server needs the ZAI_API_KEY and ZAI_BASE_URL variables (see DEPLOY-VERCEL.md).',
   'coach.contextTag': 'Live data: {tx} transactions · {month} spending this month',
   'coach.clear': 'New chat',
 

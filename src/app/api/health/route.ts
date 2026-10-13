@@ -1,3 +1,4 @@
+import { aiStatus } from '@/lib/ai'
 import { ok } from '@/lib/api-helpers'
 import { db, dbInfo } from '@/lib/db'
 import { demoStorageInfo } from '@/lib/demo-db'
@@ -15,6 +16,8 @@ export const dynamic = 'force-dynamic'
  *     field spells out the exact fix.
  *   - demo: ephemeral local file → the demo account does NOT consume Turso
  *     storage (Task 26); its dataset lives in /tmp on the server instance.
+ *   - ai: "env" | "file" | "missing" (Task 29) — missing means /api/chat will
+ *     return 503 ai_config until ZAI_API_KEY + ZAI_BASE_URL are added.
  */
 export async function GET() {
   const started = Date.now()
@@ -27,6 +30,7 @@ export async function GET() {
   }
 
   const info = dbInfo()
+  const ai = aiStatus()
   const warning =
     info.mode === 'local' && (info.vercel || process.env.NODE_ENV === 'production')
       ? 'Mode SQLite local actif — sur Vercel cela signifie que les variables Turso sont absentes (aucune donnée ne se chargera). Ajoutez TURSO_DATABASE_URL et TURSO_AUTH_TOKEN (ou DATABASE_URL="libsql://…?authToken=…") dans Vercel → Settings → Environment Variables, puis redéployez. Voir DEPLOY-VERCEL.md.'
@@ -37,6 +41,7 @@ export async function GET() {
     storage: info.mode,
     creds: info.source,
     demo: demoStorageInfo(),
+    ai,
     latencyMs: Date.now() - started,
     warning,
     hint: reachable ? undefined : 'Database unreachable — check the environment variables, then redeploy.',

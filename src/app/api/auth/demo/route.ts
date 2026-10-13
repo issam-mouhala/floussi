@@ -43,9 +43,14 @@ export async function POST(req: Request) {
     bustCache()
 
     // 3) one-time migration: delete the legacy demo account from the MAIN DB
-    //    (pre-Task-26 storage). Best-effort — never blocks the demo.
-    const purge = await purgeLegacyDemoUser()
-    if (purge.error) console.warn('[auth/demo] legacy purge deferred:', purge.error)
+    //    (pre-Task-26 storage). FIRE-AND-FORGET (Task 29): the response must
+    //    never wait on the cloud DB — even a slow/down Turso cannot delay the
+    //    demo login. The purge is retried on the next demo login if it fails.
+    void purgeLegacyDemoUser()
+      .then((purge) => {
+        if (purge.error) console.warn('[auth/demo] legacy purge deferred:', purge.error)
+      })
+      .catch(() => {})
 
     const cookie = await createSession(userId, req, { demo: true })
     return new Response(

@@ -1,5 +1,6 @@
 import { mainDb, setAmbientDb } from '@/lib/db'
 import { demoDb, demoDbIfReady } from '@/lib/demo-db'
+import { refreshDemoDatasetIfStale } from '@/lib/demo'
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 
 /**
@@ -98,6 +99,10 @@ async function resolveSession(req: Request) {
         void client.session.delete({ where: { id: row.id } }).catch(() => {})
         return null
       }
+      // Task 28 — keep the demo dataset anchored to the current day even for
+      // sessions that span several days on a warm instance. Self-guarded to
+      // one check/day/process, deduped, never throws.
+      await refreshDemoDatasetIfStale(client)
       return { id: row.user.id, email: row.user.email, name: row.user.name }
     } catch {
       return null
