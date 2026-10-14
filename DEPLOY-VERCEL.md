@@ -2,6 +2,18 @@
 
 Ce guide résout et prévient le problème classique **« l'app se déploie mais aucune donnée ne se charge »**.
 
+## ✅ Vérifier QUE votre déploiement est à jour (2 secondes — Task 30)
+
+Le n°1 des causes de « les bugs sont toujours là » : le navigateur affiche une **ancienne version**.
+Depuis la Task 30 chaque build affiche sa version :
+
+- **Page de connexion** : petite ligne `Floussi v2026.10.14` sous le bouton démo ;
+- **Pied de page de la landing** : `© 2026 Floussi … · v2026.10.14` ;
+- **`/api/health`** : champ `"version": "2026.10.14"`.
+
+Si la version affichée n'est PAS `2026.10.14` → le déploiement est ancien : re-suivez les étapes
+plus bas (nouveau zip → GitHub → Redeploy), puis **forcez un rafraîchissement** (Ctrl+Shift+R).
+
 ## Pourquoi « pas de données » après déploiement ?
 
 Floussi stocke vos données dans **votre base Turso (cloud)**. Sur votre machine, un fichier
@@ -53,10 +65,14 @@ git push -u origin main
 > Variante acceptée : une seule variable `DATABASE_URL` = `libsql://floussi-xxxx.turso.io?authToken=eyJ…`
 > (le token est extrait automatiquement). `TURSO_*` reste prioritaire si les deux sont présents.
 >
-> **`ZAI_BASE_URL` + `ZAI_API_KEY` alimentent le coach IA** (page « Coach »). Sans elles, le
-> coach affiche un message de configuration et `/api/health` rapporte `"ai": "missing"` —
-> tout le reste de l'app fonctionne normalement. Ajoutez-les **pour tous les environnements**
-> (Production, Preview, Development), puis **Redeploy**.
+> **`ZAI_BASE_URL` + `ZAI_API_KEY` alimentent le coach IA** (page « Coach »). **Depuis la Task 30,
+> le coach ne tombe JAMAIS en panne** : sans configuration IA (ou si la passerelle tombe), il
+> répond quand même grâce au **moteur local de précision** — un moteur déterministe embarqué qui
+> calcule les réponses directement depuis VOS transactions (totaux du jour/semaine/mois, plus
+> grosse catégorie, budget restant, projection, conseils) en darija (2 écritures), français et
+> anglais, avec des **chiffres exacts à 100 %**. Avec `ZAI_*` configurées, vous avez en plus les
+> réponses conversationnelles de l'IA. `/api/health` rapporte `"ai": "env" | "file" | "missing"`.
+> Ajoutez-les **pour tous les environnements** (Production, Preview, Development), puis **Redeploy**.
 >
 > Optionnel — si votre passerelle IA exige des en-têtes supplémentaires : `ZAI_TOKEN`
 > (en-tête `X-Token`), `ZAI_CHAT_ID` (`X-Chat-Id`), `ZAI_USER_ID` (`X-User-Id`).
@@ -70,9 +86,10 @@ Ouvrez **`https://<votre-app>.vercel.app/api/health`** :
 ```json
 {
   "ok": true,
+  "version": "2026.10.14",   ← doit être la version du dernier zip
   "storage": "turso",        ← doit être "turso"
   "creds": "env",
-  "ai": "env",               ← "env" = coach IA opérationnel ; "missing" = ajouter ZAI_*
+  "ai": "env",               ← "missing" = le coach utilise le moteur local (il répond quand même)
   "demo": { "mode": "ephemeral-local-file", … },
   "latencyMs": 42
 }
@@ -97,6 +114,10 @@ Résultat :
 
 - **Zéro stockage cloud consommé par le démo** — Turso ne contient que les comptes réels ;
 - le bouton démo **fonctionne même si Turso est mal configuré** (il n'en dépend plus) ;
+- **Task 30 — le cookie démo est auto-vérifié (HMAC)** : il reste valable sur N'IMPORTE
+  quelle instance serverless. Avant, Vercel pouvait envoyer la requête suivante sur une
+  autre instance qui ne connaissait pas la session → 401 → « chargement puis retour à la
+  connexion ». C'est corrigé : chaque instance re-provisionne le jeu de données à la volée ;
 - le seed local est plus rapide qu'avant (~1 s au lieu de 2–3 s via le réseau) ;
 - chaque connexion démo réinitialise les données, et les modifications faites pendant
   une session démo sont **volatiles par conception** (recyclées avec l'instance serverless).
@@ -121,8 +142,8 @@ En cas de problème :
 | Aucune donnée, `/api/health` → `storage: "local"` | Env vars absentes ou mal nommées | Ajouter `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` → Redeploy |
 | `/api/health` → `ok: false` | URL/token invalide ou base en pause | Recréer un token (Tokens → Create Token), vérifier l'URL |
 | « You don't have an account » avec le bon email | Ce n'est pas la même base Turso | Vérifier que l'URL pointe vers la base utilisée par l'app locale |
-| Le coach IA répond « non configuré / indisponible » | Variables `ZAI_BASE_URL` + `ZAI_API_KEY` absentes du déploiement (Task 29 : `/api/health` → `"ai": "missing"`) | Ajouter les deux variables pour tous les environnements → Redeploy |
-| Le build échoue sur `prisma generate` | Installation incomplète | Vérifier que `prisma` est bien dans `dependencies` (c'est le cas) |
+| Le coach IA répond « non configuré / indisponible » | **Task 30 : n'arrive plus** — le moteur local de précision répond toujours (chiffres exacts). Pour les réponses IA complètes, ajouter `ZAI_BASE_URL` + `ZAI_API_KEY` (`/api/health` → `"ai":"missing"` = moteur local actif) | Ajouter les deux variables pour tous les environnements → Redeploy (optionnel) |
+| Le build échoue sur `prisma generate` | Installation incomplète — Task 30 : `postinstall: prisma generate` s'exécute désormais automatiquement à chaque install | Vérifier que `prisma` est bien dans `dependencies` (c'est le cas) |
 
 ## Notes techniques
 

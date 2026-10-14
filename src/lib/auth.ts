@@ -1,7 +1,8 @@
 import { mainDb, setAmbientDb } from '@/lib/db'
 import { demoDb, demoDbIfReady } from '@/lib/demo-db'
-import { refreshDemoDatasetIfStale } from '@/lib/demo'
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { DEMO_NAME, DEMO_USER_ID, refreshDemoDatasetIfStale } from '@/lib/demo'
+import { DEMO_EMAIL } from '@/lib/types'
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 
 /**
  * Floussi auth core (Task 21, sessions routed per-storage in Task 26).
@@ -72,6 +73,58 @@ function parseCookies(header: string | null): Record<string, string> {
   return out
 }
 
+// ------------------------------------------------------- demo token signing
+//
+// Task 30 — THE fix for « Try Demo → loading → no result » on Vercel.
+//
+// A demo session used to be a random token whose only proof of validity was a
+// row in the EPHEMERAL demo file of the instance that created it. Vercel routes
+// consecutive requests of the same visit to DIFFERENT serverless instances —
+// each with its own /tmp file — so the session row regularly did not exist on
+// the instance that served /api/overview → 401 → the dashboard kicked back to
+// the login screen right after the demo click.
+//
+// Demo cookies are now SELF-VERIFYING: `d.<payload>.<hmac>` (HMAC-SHA256 over
+// an expiry payload). Validation is pure CPU — no database, no instance
+// affinity. The signed surface grants access to the demo's FAKE dataset only
+// (the routing keeps demo sessions 100 % isolated from the main DB), so a
+// static signing key is an accepted trade-off here; real sessions keep their
+// random tokens + server-side rows.
+const DEMO_SIGNING_KEY = 'floussi-demo-cookies-v1'
+
+function signDemoToken(ttlMs: number = SESSION_TTL_MS): string {
+  const payload = Buffer.from(JSON.stringify({ v: 1, exp: Date.now() + ttlMs }))
+  const sig = createHmac('sha256', DEMO_SIGNING_KEY).update(payload).digest()
+  return `${DEMO_TOKEN_PREFIX}${payload.toString('base64url')}.${sig.toString('base64url')}`
+}
+
+type DemoTokenCheck = { kind: 'signed' } | { kind: 'legacy' } | { kind: 'invalid' }
+
+/** Synchronous (no I/O) validity check of a demo cookie token. */
+function readDemoToken(token: string): DemoTokenCheck {
+  if (!token.startsWith(DEMO_TOKEN_PREFIX)) return { kind: 'invalid' }
+  const rest = token.slice(DEMO_TOKEN_PREFIX.length)
+  const dot = rest.indexOf('.')
+  if (dot <= 0) return { kind: 'legacy' } // pre-Task-30 random token
+  let payload: Buffer
+  let sig: Buffer
+  try {
+    payload = Buffer.from(rest.slice(0, dot), 'base64url')
+    sig = Buffer.from(rest.slice(dot + 1), 'base64url')
+  } catch {
+    return { kind: 'invalid' }
+  }
+  const expect = createHmac('sha256', DEMO_SIGNING_KEY).update(payload).digest()
+  if (sig.length !== expect.length || !timingSafeEqual(sig, expect)) return { kind: 'invalid' }
+  try {
+    const p = JSON.parse(payload.toString('utf8')) as { v?: number; exp?: number }
+    if (p.v !== 1 || typeof p.exp !== 'number' || p.exp < Date.now()) return { kind: 'invalid' }
+    return { kind: 'signed' }
+  } catch {
+    return { kind: 'invalid' }
+  }
+}
+
 /** Resolve the logged-in user AND route storage for the rest of the request.
  *
  *  ⚠ Ordering matters: the demo check + ambient installation happen in the
@@ -84,13 +137,25 @@ async function resolveSession(req: Request) {
   if (!token || token.length < 20) return null
 
   if (token.startsWith(DEMO_TOKEN_PREFIX)) {
-    // Demo session → ephemeral demo DB. If the demo file is not ready on this
-    // instance yet, the session row cannot exist either → behave as logged out.
+    // Demo session → ephemeral demo DB.
+    const check = readDemoToken(token)
+    if (check.kind === 'invalid') return null
     const ready = demoDbIfReady()
-    if (!ready) return null
+    if (!ready) return null // sub-second cold-start race — the next request self-heals
     setAmbientDb(ready)
     try {
       const client = await demoDb()
+      if (check.kind === 'signed') {
+        // Self-verifying token → valid on ANY instance. No session-row lookup:
+        // the demo user + dataset are (re)provisioned in place when this
+        // instance's file is empty or stale (refreshDemoDatasetIfStale handles
+        // the empty-DB case with a full ensure+seed), and demo edits stay
+        // per-instance by design.
+        await refreshDemoDatasetIfStale(client)
+        return { id: DEMO_USER_ID, email: DEMO_EMAIL, name: DEMO_NAME }
+      }
+      // Legacy cookie (pre-Task-30 random token) — keep the old row lookup so
+      // an in-flight demo visit survives a deploy without re-clicking.
       const row = await client.session
         .findUnique({ where: { tokenHash: sha256(token) }, include: { user: true } })
         .catch(() => null)
@@ -132,14 +197,15 @@ export async function requireUser(req: Request): Promise<SessionUser | null> {
 }
 
 /** Create a DB session row and return the Set-Cookie value for it.
- *  `opts.demo` stores the row in the ephemeral demo DB and prefixes the cookie
- *  token with `d.` so every later request resolves to the demo storage. */
+ *  `opts.demo` returns a SELF-VERIFYING signed cookie (valid on every instance,
+ *  Task 30) prefixed with `d.` so every later request resolves to the demo
+ *  storage; the row is still written best-effort for logout bookkeeping. */
 export async function createSession(
   userId: string,
   req: Request,
   opts: { demo?: boolean } = {},
 ): Promise<string> {
-  const token = (opts.demo ? DEMO_TOKEN_PREFIX : '') + newSessionToken()
+  const token = opts.demo ? signDemoToken() : newSessionToken()
   const client = opts.demo ? await demoDb() : mainDb
   await client.session.create({
     data: { tokenHash: sha256(token), userId, expiresAt: new Date(Date.now() + SESSION_TTL_MS) },

@@ -14,6 +14,22 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** j() with a hard client-side timeout (Task 30): auth flows must NEVER hang
+ *  on loading forever — if the serverless function is stuck, the abort error
+ *  message matches the auth-view mapping (/starting up|self-repairs/) so the
+ *  user sees the actionable «try again» hint instead of an eternal spinner. */
+async function jT<T>(url: string, init: RequestInit | undefined, timeoutMs: number): Promise<T> {
+  try {
+    return await j<T>(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError')
+      throw new Error('The server is starting up or unreachable — try again in a moment (timeout)')
+    throw err
+  }
+}
+
+const AUTH_TIMEOUT_MS = 70_000 // serverless functions cap at 60s — let the server answer first
+
 const jsonInit = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -608,17 +624,20 @@ export function useLogin() {
   const bust = useInvalidateOnAuthChange()
   return useMutation({
     mutationFn: (p: { email: string; password: string }) =>
-      j<{ user: AuthUserDTO }>('/api/auth/login', jsonInit('POST', p)),
+      jT<{ user: AuthUserDTO }>('/api/auth/login', jsonInit('POST', p), AUTH_TIMEOUT_MS),
     onSuccess: () => bust(),
   })
 }
 
 /** One-click shared demo account (Task 23) — no credentials, server re-seeds
- *  its fake dataset on every entry. */
+ *  its fake dataset on every entry. Task 30: the visitor's chosen UI language
+ *  is applied to the demo account (it no longer always opens in French), and
+ *  a hard 70 s client timeout means the button can never spin forever. */
 export function useDemoLogin() {
   const bust = useInvalidateOnAuthChange()
   return useMutation({
-    mutationFn: () => j<{ user: AuthUserDTO; seeded: number }>('/api/auth/demo', { method: 'POST' }),
+    mutationFn: (lang: Lang) =>
+      jT<{ user: AuthUserDTO; seeded: number }>('/api/auth/demo', jsonInit('POST', { lang }), AUTH_TIMEOUT_MS),
     onSuccess: () => bust(),
   })
 }
@@ -627,7 +646,7 @@ export function useRegister() {
   const bust = useInvalidateOnAuthChange()
   return useMutation({
     mutationFn: (p: { name: string; email: string; password: string }) =>
-      j<{ user: AuthUserDTO }>('/api/auth/register', jsonInit('POST', p)),
+      jT<{ user: AuthUserDTO }>('/api/auth/register', jsonInit('POST', p), AUTH_TIMEOUT_MS),
     onSuccess: () => bust(),
   })
 }

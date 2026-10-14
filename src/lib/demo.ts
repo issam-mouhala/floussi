@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/auth'
 import { bustCache } from '@/lib/cache'
 import { CATEGORIES } from '@/lib/seed'
 import { DEMO_EMAIL } from '@/lib/types'
+import type { Lang } from '@/lib/i18n'
 
 /**
  * Floussi demo account (Task 23; storage moved out of the cloud DB in Task 26).
@@ -32,7 +33,7 @@ import { DEMO_EMAIL } from '@/lib/types'
  *    reachable through POST /api/auth/demo.
  */
 
-const DEMO_NAME = 'Démo'
+export const DEMO_NAME = 'Démo'
 /** Fixed id so sessions, caches and browser mirrors stay stable across
  *  rebuilds of the ephemeral demo DB (cuid() would change on every recreate). */
 export const DEMO_USER_ID = 'demo'
@@ -89,13 +90,16 @@ export async function ensureDemoUser(client: PrismaClient): Promise<string> {
 }
 
 /** Wipe the demo user's activity (transactions, budgets, goals, notifications)
- *  and restore factory demo settings. Categories are preserved. */
-export async function resetDemoData(client: PrismaClient, userId: string): Promise<void> {
+ *  and restore factory demo settings. Categories are preserved.
+ *  `uiLang` (Task 30): the visitor's chosen UI language — the demo account
+ *  opens in THAT language instead of the hardcoded French default. */
+export async function resetDemoData(client: PrismaClient, userId: string, uiLang?: Lang): Promise<void> {
+  const language = uiLang === 'en' || uiLang === 'fr' || uiLang === 'ary' ? uiLang : 'fr'
   await client.appNotification.deleteMany({ where: { userId } })
   await client.transaction.deleteMany({ where: { userId } })
   await client.budget.deleteMany({ where: { userId } })
   await client.savingGoal.deleteMany({ where: { userId } })
-  await client.settings.update({ where: { userId }, data: { ...DEMO_SETTINGS } })
+  await client.settings.update({ where: { userId }, data: { ...DEMO_SETTINGS, language } })
 }
 
 // ------------------------------------------------------------ legacy migration
@@ -328,8 +332,13 @@ async function doFreshnessRefresh(client: PrismaClient, today: string): Promise<
   const dayStartUtc = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
   if (!newest || newest.date.getTime() < dayStartUtc) {
     // the dataset no longer contains the current day → rebuild it in place
+    // (keeping the language the visitor chose — Task 30)
     await ensureDemoUser(client)
-    await resetDemoData(client, DEMO_USER_ID)
+    const current = await client.settings
+      .findUnique({ where: { userId: DEMO_USER_ID }, select: { language: true } })
+      .catch(() => null)
+    const uiLang = current?.language as Lang | undefined
+    await resetDemoData(client, DEMO_USER_ID, uiLang)
     await seedDemoData(client, DEMO_USER_ID)
     bustCache()
     console.log('[demo] dataset refreshed to include the current day')

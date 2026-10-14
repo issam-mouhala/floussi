@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Play, Sparkles
 import { useAppStore } from '@/lib/store'
 import { LANGS, tr, type Key, type Lang } from '@/lib/i18n'
 import { getGuestLang, setGuestLang } from '@/lib/guest-lang'
+import { APP_VERSION } from '@/lib/version'
 import { useDemoLogin, useLogin, useRegister } from './api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -83,7 +84,9 @@ export function AuthView() {
   const tryDemo = async () => {
     setError(null)
     try {
-      await demo.mutateAsync()
+      // Task 30 — carry the visitor's language: the demo account opens in the
+      // SAME language the visitor chose (darija stays darija after login).
+      await demo.mutateAsync(lang)
       enterApp()
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
@@ -163,7 +166,7 @@ export function AuthView() {
                 key={l.code}
                 onClick={() => switchLang(l.code)}
                 className={cn(
-                  'rounded-lg px-2 py-1 text-xs font-semibold transition-all',
+                  'shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-semibold transition-all',
                   l.code === lang ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground',
                 )}
                 aria-label={l.native}
@@ -316,6 +319,13 @@ export function AuthView() {
               {t('auth.demoBtn')}
             </Button>
             <p className="mt-2 text-center text-xs text-muted-foreground">{t('auth.demoHint')}</p>
+
+            {/* Task 30 — release stamp: lets anyone verify in 2 seconds that
+                the deployment is the current build (stale deploys were the #1
+                reason «the bugs are still there»). */}
+            <p className="mt-5 text-center text-[10px] font-medium tracking-wide text-muted-foreground/60">
+              Floussi v{APP_VERSION}
+            </p>
 
             <p className="mt-5 text-center text-sm text-muted-foreground">
               {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}

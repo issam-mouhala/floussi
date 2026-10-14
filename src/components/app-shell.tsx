@@ -110,7 +110,9 @@ function LangQuick() {
           disabled={update.isPending}
           onClick={() => update.mutate({ language: l.code })}
           className={cn(
-            'rounded-lg px-2 py-1 text-xs font-semibold transition-all',
+            // Task 30 — shrink-0 + nowrap: the flex pill used to squeeze the
+            // Darija label until only «دار» stayed visible (the user's bug)
+            'shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-semibold transition-all',
             l.code === lang ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'
           )}
           aria-label={l.native}

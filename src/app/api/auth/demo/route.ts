@@ -4,6 +4,8 @@ import { bustCache } from '@/lib/cache'
 import { ensureDemoUser, purgeLegacyDemoUser, resetDemoData, seedDemoData } from '@/lib/demo'
 import { demoDb } from '@/lib/demo-db'
 import { DEMO_EMAIL } from '@/lib/types'
+import { readJson } from '@/lib/api-helpers'
+import type { Lang } from '@/lib/i18n'
 
 // Serverless hardening (Vercel): seeding ~232 transactions + budgets + goals
 // on a cold start must never hit the plan's invocation limit.
@@ -30,13 +32,19 @@ export async function POST(req: Request) {
     return bad('Too many attempts — try again in a few minutes', 429)
   }
 
+  // Task 30 — the visitor's chosen UI language travels with the demo login so
+  // the seeded demo account opens in darija/fr/en as THEY selected.
+  const body = await readJson<{ lang?: string }>(req).catch(() => null)
+  const uiLang: Lang | undefined =
+    body?.lang === 'en' || body?.lang === 'fr' || body?.lang === 'ary' ? body.lang : undefined
+
   try {
     // 1) the ephemeral demo DB (local file — works even if Turso is down)
     const client = await demoDb()
 
     // 2) fresh demo dataset on this instance
     const userId = await ensureDemoUser(client)
-    await resetDemoData(client, userId)
+    await resetDemoData(client, userId, uiLang)
     const seeded = await seedDemoData(client, userId)
 
     loginSucceeded(`demo|${ip}`)

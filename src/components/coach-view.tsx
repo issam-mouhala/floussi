@@ -50,6 +50,10 @@ export function CoachView() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Task 30 — hard client timeout: even a dead network can never leave
+        // the typing indicator running forever (the server itself answers
+        // ≤~50s thanks to the AI timeout + local fallback).
+        signal: AbortSignal.timeout(90_000),
         body: JSON.stringify({ messages: next.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-12), lang }),
       })
       const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string; code?: string }

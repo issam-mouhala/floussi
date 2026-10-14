@@ -2,6 +2,7 @@ import { aiStatus } from '@/lib/ai'
 import { ok } from '@/lib/api-helpers'
 import { db, dbInfo } from '@/lib/db'
 import { demoStorageInfo } from '@/lib/demo-db'
+import { APP_VERSION } from '@/lib/version'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,8 +17,12 @@ export const dynamic = 'force-dynamic'
  *     field spells out the exact fix.
  *   - demo: ephemeral local file → the demo account does NOT consume Turso
  *     storage (Task 26); its dataset lives in /tmp on the server instance.
- *   - ai: "env" | "file" | "missing" (Task 29) — missing means /api/chat will
- *     return 503 ai_config until ZAI_API_KEY + ZAI_BASE_URL are added.
+ *   - ai: "env" | "file" | "missing" (Task 29) — with Task 30 the coach NEVER
+ *     fails: "missing" means /api/chat answers with the local precision engine
+ *     (exact figures, no AI) instead of an error.
+ *   - version (Task 30) — compare with the latest zip: if it differs, the
+ *     deployment is still an old build (that is the #1 cause of "the bugs are
+ *     still there").
  */
 export async function GET() {
   const started = Date.now()
@@ -38,6 +43,7 @@ export async function GET() {
 
   return ok({
     ok: reachable,
+    version: APP_VERSION,
     storage: info.mode,
     creds: info.source,
     demo: demoStorageInfo(),

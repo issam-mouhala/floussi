@@ -1,4 +1,5 @@
-import { AiNotConfiguredError, getZai } from '@/lib/ai'
+import { AiNotConfiguredError, aiStatus, getZai } from '@/lib/ai'
+import { answerLocally } from '@/lib/coach-local'
 import { bad, ok, readJson } from '@/lib/api-helpers'
 import { requireUser } from '@/lib/auth'
 import { buildCoachBriefing } from '@/lib/coach-context'
@@ -95,6 +96,18 @@ export async function POST(req: Request) {
     const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? ''
     const arabicLetters = (lastUser.match(/[\u0600-\u06FF]/g) ?? []).length
     const briefingLang: Lang = arabicLetters >= 5 ? 'ary' : lang === 'ary' ? 'en' : lang
+
+    // Task 30 — the coach can NEVER leave the user without an answer:
+    // 1) no AI configuration on this deployment → skip straight to the local
+    //    precision engine (no wasted ZAI.create() attempt);
+    // 2) AI configured but the call fails / times out / returns empty →
+    //    local engine answers with exact figures from the real data.
+    if (aiStatus() === 'missing') {
+      console.log('[chat] no AI config → local precision coach')
+      const message = await answerLocally(lang, lastUser, user.id)
+      return ok({ message, source: 'local' })
+    }
+
     const [settings, briefing] = await Promise.all([
       import('@/lib/analytics').then((m) => m.getSettings(user.id)),
       buildCoachBriefing(briefingLang, user.id),
@@ -113,7 +126,13 @@ export async function POST(req: Request) {
         temperature: 0.3,
       })
 
-    let completion = await call()
+    // soft timeout: a hung gateway must not eat the whole function budget —
+    // fall back to the local engine and answer NOW
+    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+      Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('ai-timeout')), ms))])
+    const AI_TIMEOUT_MS = 45_000
+
+    let completion = await withTimeout(call(), AI_TIMEOUT_MS)
     let content =
       completion?.choices?.[0]?.message?.content ??
       (completion as { content?: string })?.content ??
@@ -121,31 +140,35 @@ export async function POST(req: Request) {
 
     // one retry in case of an empty/blocked response
     if (!content || !String(content).trim()) {
-      completion = await call()
+      completion = await withTimeout(call(), AI_TIMEOUT_MS)
       content =
         completion?.choices?.[0]?.message?.content ??
         (completion as { content?: string })?.content ??
         null
     }
 
-    if (!content) return bad('Empty response from coach', 502)
-    return ok({ message: darijifyCurrency(String(content).trim()) })
-  } catch (e) {
-    // Task 29 — a deployment without AI credentials must be OBVIOUS: the
-    // client reads `code` and shows the setup hint (coach.errorCfg) instead
-    // of a generic «could not reach the coach».
-    if (e instanceof AiNotConfiguredError) {
-      console.error('chat: AI not configured on this deployment')
-      return Response.json(
-        {
-          error:
-            'AI coach not configured — add ZAI_API_KEY and ZAI_BASE_URL in Vercel → Settings → Environment Variables (see DEPLOY-VERCEL.md), then redeploy.',
-          code: 'ai_config',
-        },
-        { status: 503 },
-      )
+    if (!content) {
+      console.warn('[chat] empty AI response → local precision coach')
+      const message = await answerLocally(lang, lastUser, user.id)
+      return ok({ message, source: 'local' })
     }
-    console.error('chat error', e)
-    return bad('Coach unavailable, please retry', 502)
+    return ok({ message: darijifyCurrency(String(content).trim()), source: 'ai' })
+  } catch (e) {
+    // Task 30 — ANY failure (missing config, gateway down, timeout, parse
+    // error) falls back to the deterministic local engine, which answers with
+    // exact figures computed from the user's real transactions.
+    if (e instanceof AiNotConfiguredError) {
+      console.error('chat: AI not configured on this deployment → local coach')
+    } else {
+      console.error('chat error → local precision coach:', e instanceof Error ? e.message : e)
+    }
+    try {
+      const lastUser = [...history].reverse().find((m) => m.role === 'user')?.content ?? ''
+      const message = await answerLocally(lang, lastUser, user.id)
+      return ok({ message, source: 'local' })
+    } catch (e2) {
+      console.error('local coach failed too:', e2 instanceof Error ? e2.message : e2)
+      return bad('Coach unavailable, please retry', 502)
+    }
   }
 }

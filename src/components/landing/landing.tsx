@@ -10,6 +10,7 @@ import { useAppStore } from '@/lib/store'
 import { useSettings, useUpdateSettings } from '../api'
 import { LANGS } from '@/lib/i18n'
 import { setGuestLang } from '@/lib/guest-lang'
+import { APP_VERSION } from '@/lib/version'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -89,7 +90,7 @@ function Navbar({ c }: { c: LandingCopy }) {
                 key={l.code}
                 onClick={() => (signedIn ? update.mutate({ language: l.code }) : setGuestLang(l.code))}
                 className={cn(
-                  'rounded-lg px-2 py-1 text-xs font-semibold transition-all min-w-8',
+                  'shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-semibold transition-all min-w-8',
                   l.code === lang ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'
                 )}
                 aria-label={l.native}
@@ -240,7 +241,7 @@ function Footer({ c }: { c: LandingCopy }) {
           </div>
         </div>
         <div className="mt-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t pt-5">
-          <p className="text-[11px] text-muted-foreground">© 2026 Floussi · Made in Morocco 🇲🇦</p>
+          <p className="text-[11px] text-muted-foreground">© 2026 Floussi · Made in Morocco 🇲🇦 · v{APP_VERSION}</p>
           <button onClick={enter} className="text-[11px] font-semibold text-primary hover:underline underline-offset-4">
             {c.openApp} <ChevronDown className="inline size-3 -rotate-90 rtl:rotate-90" aria-hidden />
           </button>
