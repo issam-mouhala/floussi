@@ -61,6 +61,8 @@ git push -u origin main
 | `TURSO_AUTH_TOKEN` | `eyJ…` (votre token) |
 | `ZAI_BASE_URL` | URL de l'API IA compatible OpenAI, préfixe de version inclus (ex. `https://api.z.ai/api/paas/v4`) |
 | `ZAI_API_KEY` | la clé API correspondante |
+| `ADMIN_EMAIL` | votre email admin (ex. `admin@votredomaine.com`) — active l'éditeur de textes |
+| `ADMIN_PASSWORD` | un MOT DE PASSE LONG ET UNIQUE — aucune valeur par défaut n'existe |
 
 > Variante acceptée : une seule variable `DATABASE_URL` = `libsql://floussi-xxxx.turso.io?authToken=eyJ…`
 > (le token est extrait automatiquement). `TURSO_*` reste prioritaire si les deux sont présents.
@@ -78,6 +80,36 @@ git push -u origin main
 > (en-tête `X-Token`), `ZAI_CHAT_ID` (`X-Chat-Id`), `ZAI_USER_ID` (`X-User-Id`).
 
 4. **Deploy**. Le build exécute `prisma generate && next build` automatiquement.
+
+## Éditeur de textes admin (Task 31) — corriger les fautes partout en 2 clics
+
+Un compte **admin** permet de modifier N'IMPORTE QUEL texte du site directement en cliquant dessus
+(darija, français, anglais — page d'accueil, connexion, application…), pour corriger les fautes
+d'écriture sans toucher au code :
+
+1. Connectez-vous sur **`https://<votre-app>.vercel.app/admin`** (page discrète, non indexée,
+   absente de tous les menus) avec `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+2. Une pastille **ADMIN** apparaît en bas à droite → activez **« Modifier les textes »**.
+3. Survolez un texte : cadre pointillé ambre → **cliquez** : un champ s'ouvre à côté (ex. cliquer
+   sur « فهم فلوسك. » ouvre la clé `landing.h1a` avec le texte exact pré-rempli).
+4. Modifiez → **سجّل / Enregistrer** : le texte change INSTANTANÉMENT pour vous et est stocké dans
+   le cloud (table `TextOverride` de Turso) — tous les visiteurs le voient dès leur prochaine
+   visite. Bouton **رجّع النص الأصلي / Rétablir** pour revenir au texte d'origine.
+5. Désactivez l'interrupteur pour naviguer normalement (les clics ne sont plus interceptés).
+
+Détails utiles :
+
+- Si deux textes identiques viennent de clés différentes, l'éditeur affiche des **pastilles de
+  clés candidates** — choisissez celle à corriger (les autres restent inchangées).
+- Les phrases avec variables (chiffres, dates, noms) et les données personnelles ne sont pas
+  cliquables — seul le texte d'interface est éditable.
+- Sans `ADMIN_EMAIL`/`ADMIN_PASSWORD` sur le serveur, la connexion admin répond 403 (fonction
+  désactivée — **aucun mot de passe par défaut n'existe**).
+- La table `TextOverride` est déjà créée dans Turso (migration additive sans perte). Pour une
+  base Turso NEUVE, lancez `bun scripts/t31-textoverride-migrate.ts` (idempotent) ou
+  `bunx prisma db push`.
+- Le cookie admin est signé (HMAC, 7 jours) et vaut sur toutes les instances Vercel ; il ne
+  donne accès QU'à l'édition des textes — jamais aux comptes ni aux données personnelles.
 
 ## Étape 3 — Vérifier le déploiement
 

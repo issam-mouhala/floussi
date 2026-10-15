@@ -567,6 +567,22 @@ const fr: Dict = {
   'err.desc': 'Un problème est survenu en joignant votre compte. Vos données sont en sécurité — vérifiez votre connexion et réessayez.',
   'err.descTx': 'Impossible de charger vos transactions. Vos données sont en sécurité — vérifiez votre connexion et réessayez.',
   'err.retry': 'Réessayer',
+
+  // admin text editor (Task 31)
+  'admin.editTexts': 'Modifier les textes',
+  'admin.signOut': 'Déconnexion',
+  'admin.loginTitle': 'Connexion admin',
+  'admin.loginSub': 'Corrigez n’importe quel texte du site — cliquez, modifiez, enregistrez.',
+  'admin.email': 'Email',
+  'admin.password': 'Mot de passe',
+  'admin.signIn': 'Se connecter',
+  'admin.wrongCreds': 'Email ou mot de passe incorrect.',
+  'admin.disabled': 'Connexion admin désactivée — définissez ADMIN_EMAIL et ADMIN_PASSWORD sur le serveur d’abord.',
+  'admin.reset': 'Texte d’origine',
+  'admin.saved': 'Enregistré — visible par tous les visiteurs.',
+  'admin.resetDone': 'Texte d’origine rétabli.',
+  'admin.saveFailed': 'Enregistrement impossible — réessayez.',
+  'admin.emptyValue': 'Le texte ne peut pas être vide — utilisez Rétablir.',
 }
 
 export default fr

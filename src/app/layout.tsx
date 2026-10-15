@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { PwaRegister } from "@/components/pwa-register";
+import { AdminProvider } from "@/components/admin/admin-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -73,7 +74,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <AdminProvider>{children}</AdminProvider>
         <PwaRegister />
         <Toaster position="top-center" richColors />
       </body>

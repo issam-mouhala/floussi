@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import { Wallet, Sun, Moon, ArrowDown, Sparkles, ChevronDown } from 'lucide-react'
 import { useApp } from '../app-context'
+import { useAdminSafe } from '../admin/admin-context'
 import { useAuthMe, useOverview } from '../api'
 import { useAppStore } from '@/lib/store'
 import { useSettings, useUpdateSettings } from '../api'
@@ -255,7 +256,19 @@ function Footer({ c }: { c: LandingCopy }) {
 
 export function Landing() {
   const { lang, dir } = useApp()
-  const copy: LandingCopy = landingCopy[(lang as LandingLang) in landingCopy ? (lang as LandingLang) : 'en']
+  const { overrides } = useAdminSafe()
+  // Task 31 — admin text corrections: landing-copy overrides are keyed
+  // 'landing.<field>' in the DB; strip the prefix and patch the copy object.
+  const copy = React.useMemo<LandingCopy>(() => {
+    const base = landingCopy[(lang as LandingLang) in landingCopy ? (lang as LandingLang) : 'en']
+    const ov = overrides?.[lang]
+    if (!ov) return base
+    const patch: Record<string, string> = {}
+    for (const [k, v] of Object.entries(ov)) {
+      if (k.startsWith('landing.') && v) patch[k.slice(8)] = v
+    }
+    return Object.keys(patch).length ? ({ ...base, ...patch } as LandingCopy) : base
+  }, [lang, overrides])
 
   return (
     <div dir={dir} className="flex min-h-dvh flex-col">

@@ -568,6 +568,22 @@ const ary: Dict = {
   'err.desc': 'وقع شي مشكل فالاتصال بالحساب ديالك. المعطيات ديالك مأمّنة — تحقق من الأنترنيت ديالك و عاود جرّب.',
   'err.descTx': 'ما قدرناش نجيبو المصاريف. المعطيات ديالك مأمّنة — تحقق من الأنترنيت ديالك و عاود جرّب.',
   'err.retry': 'عاود جرّب',
+
+  // admin text editor (Task 31)
+  'admin.editTexts': 'بدل النصوص',
+  'admin.signOut': 'خرج',
+  'admin.loginTitle': 'دخول الأدمن',
+  'admin.loginSub': 'صلّح أي نص ف الموقع — كليكي عليه، بدّلو، سجّل.',
+  'admin.email': 'الإيميل',
+  'admin.password': 'كلمة السر',
+  'admin.signIn': 'دخول',
+  'admin.wrongCreds': 'الإيميل ولا كلمة السر ماشي صحيحين.',
+  'admin.disabled': 'دخول الأدمن ماشي مفعّل — زيّد ADMIN_EMAIL و ADMIN_PASSWORD ف السيرفر قبل.',
+  'admin.reset': 'رجّع النص الأصلي',
+  'admin.saved': 'تسجّل — ولا باين ل كل الزوار.',
+  'admin.resetDone': 'رجع النص الأصلي.',
+  'admin.saveFailed': 'ماتسجّلش — عاود جرّب.',
+  'admin.emptyValue': 'النص مايقدرش يكون خاوي — استعمل رجّع النص الأصلي.',
 }
 
 export default ary

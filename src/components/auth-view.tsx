@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Play, Sparkles, User, Wallet } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { LANGS, tr, type Key, type Lang } from '@/lib/i18n'
+import { useAdminSafe } from './admin/admin-context'
 import { getGuestLang, setGuestLang } from '@/lib/guest-lang'
 import { APP_VERSION } from '@/lib/version'
 import { useDemoLogin, useLogin, useRegister } from './api'
@@ -48,7 +49,18 @@ export function AuthView() {
     setGuestLang(l)
   }
   const dir = LANGS.find((l) => l.code === lang)?.dir ?? 'ltr'
-  const t = React.useCallback((key: Key) => tr(lang, key), [lang])
+  // Task 31 — apply the admin's site-text corrections on top of the shipped
+  // dictionary (this view keeps its own lang state, so it cannot rely on the
+  // AppContext t() — the override lookup is applied here instead).
+  const { overrides } = useAdminSafe()
+  const t = React.useCallback(
+    (key: Key) => {
+      const ov = overrides?.[lang]?.[key]
+      if (typeof ov === 'string' && ov.length > 0) return ov
+      return tr(lang, key)
+    },
+    [lang, overrides],
+  )
 
   const [mode, setMode] = React.useState<Mode>('login')
   const [name, setName] = React.useState('')

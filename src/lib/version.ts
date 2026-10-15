@@ -4,4 +4,4 @@
  * landing footer show it as a tiny version tag. If the tag on screen differs
  * from the latest zip version, the browser/CDN is still serving an old build.
  */
-export const APP_VERSION = '2026.10.14'
+export const APP_VERSION = '2026.10.16'

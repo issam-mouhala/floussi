@@ -565,6 +565,22 @@ const en = {
   'err.desc': 'Something went wrong while reaching your account. Your data is safe — check your connection and try again.',
   'err.descTx': 'Unable to load your transactions. Your data is safe — check your connection and try again.',
   'err.retry': 'Try again',
+
+  // admin text editor (Task 31)
+  'admin.editTexts': 'Edit texts',
+  'admin.signOut': 'Sign out',
+  'admin.loginTitle': 'Admin sign-in',
+  'admin.loginSub': 'Fix any text on the site — click it, edit it, save.',
+  'admin.email': 'Email',
+  'admin.password': 'Password',
+  'admin.signIn': 'Sign in',
+  'admin.wrongCreds': 'Wrong email or password.',
+  'admin.disabled': 'Admin sign-in is disabled — set ADMIN_EMAIL and ADMIN_PASSWORD on the server first.',
+  'admin.reset': 'Reset to original',
+  'admin.saved': 'Saved — now live for every visitor.',
+  'admin.resetDone': 'Restored the original text.',
+  'admin.saveFailed': 'Could not save — try again.',
+  'admin.emptyValue': 'Text cannot be empty — use Reset instead.',
 } as const
 
 export type Key = keyof typeof en

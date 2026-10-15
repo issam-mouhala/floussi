@@ -4,6 +4,9 @@ import * as React from 'react'
 import { useAuthMe, useSettings } from './api'
 import { LANGS, tr, type Key, type Lang } from '@/lib/i18n'
 import { GUEST_LANG_EVENT, getGuestLang } from '@/lib/guest-lang'
+import { useAdminSafe } from './admin/admin-context'
+import { AdminBar } from './admin/admin-bar'
+import { AdminTextEditor } from './admin/admin-text-editor'
 
 interface AppContextValue {
   lang: Lang
@@ -36,6 +39,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signedIn = !!auth?.user
   const { data: settings } = useSettings({ enabled: signedIn })
   const [guestLang, setGuestLangState] = React.useState<Lang | null>(null)
+  // Task 31 — admin text overrides (site-copy corrections) shared app-wide
+  const admin = useAdminSafe()
   React.useEffect(() => {
     setGuestLangState(getGuestLang())
     const onGuest = (e: Event) => {
@@ -53,9 +58,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.dir = dir
   }, [lang, dir])
 
+  // t() = shipped dictionary, with the admin's site-text corrections applied
+  // on top (Task 31). An override wins whenever it exists and is non-empty.
   const t = React.useCallback(
-    (key: Key, params?: Record<string, string | number>) => tr(lang, key, params),
-    [lang]
+    (key: Key, params?: Record<string, string | number>) => {
+      const ov = admin.overrides?.[lang]?.[key]
+      if (typeof ov === 'string' && ov.length > 0 && !params) return ov
+      return tr(lang, key, params)
+    },
+    [lang, admin.overrides]
   )
 
   const value = React.useMemo<AppContextValue>(
@@ -80,7 +91,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [lang, dir, t, settings]
   )
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+      {/* Task 31 — site-owner inline text editor (inert unless admin + edit mode) */}
+      <AdminTextEditor />
+      <AdminBar />
+    </AppContext.Provider>
+  )
 }
 
 export function useApp() {

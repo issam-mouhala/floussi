@@ -144,3 +144,20 @@ model Settings {
   userId        String   @unique
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ─── Admin text editor (Task 31) ────────────────────────────────────────────
+//
+// Site-content overrides written by the owner from the inline admin editor
+// (/admin → click any text → edit). One row per (locale, key): `key` is an
+// app i18n key ('nav.dashboard') or a landing-copy key ('landing.h1a').
+// Read by GET /api/i18n/overrides (public, merged client-side into t() and
+// the landing copy) — written only through admin-authenticated routes.
+model TextOverride {
+  id        String   @id @default(cuid())
+  locale    String // en | fr | ary
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@unique([locale, key])
+}
